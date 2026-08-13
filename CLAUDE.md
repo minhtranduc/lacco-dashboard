@@ -1,7 +1,7 @@
 # CLAUDE.md — lacco-dashboard
 
 > File context gốc repo, giúp Claude Code hiểu dự án ngay từ đầu mỗi phiên, không cần giải thích lại từ đầu.
-> **Phiên bản:** v1.1 — 13/08/2026 | **Nguồn:** Tài liệu Kiến trúc Hệ thống, Kế hoạch triển khai Dashboard LACCO, Sheet 1 "Mẫu thu thập yêu cầu" (Bieu_mau_Yeu_cau_va_RACI_LACCO.xlsx — 5/14 dòng đã "Đã rõ").
+> **Phiên bản:** v1.2 — 13/08/2026 | **Nguồn:** Tài liệu Kiến trúc Hệ thống, Kế hoạch triển khai Dashboard LACCO, Sheet 1 "Mẫu thu thập yêu cầu" (Bieu_mau_Yeu_cau_va_RACI_LACCO.xlsx — 5/14 dòng đã "Đã rõ"). Bảng trạng thái yêu cầu chi tiết: xem `.claude/rules/trang-thai-yeu-cau.md`.
 > **Cần cập nhật lên v2** sau khi hoàn tất phỏng vấn Trưởng phòng Kế toán – Tài chính (9/14 dòng còn "Cần làm rõ"), trước khi thiết kế schema chi tiết ở Tuần 2.
 
 ## 1. Bối cảnh dự án
@@ -96,30 +96,11 @@ alembic upgrade head
 
 ## 7. Danh sách báo cáo bắt buộc — trạng thái yêu cầu
 
-Nguồn: Tài liệu Kiến trúc Hệ thống + Sheet 1 "Mẫu thu thập yêu cầu". Chỉ code phần logic khi trạng thái là **Đã rõ**; phần "Cần làm rõ" chỉ dựng khung UI/schema, không hardcode công thức đoán mò.
+Nguyên tắc: chỉ code phần logic khi trạng thái là **Đã rõ**; phần "Cần làm rõ" chỉ dựng khung UI/schema, không hardcode công thức đoán mò.
 
-| Nhóm báo cáo | Báo cáo con | Trạng thái | Ghi chú công thức (nếu đã rõ) |
-|---|---|---|---|
-| Kinh doanh | Doanh thu/lãi lỗ theo dịch vụ | ✅ Đã rõ | Dịch vụ Cước: doanh thu/lợi nhuận cao. Dịch vụ Hải quan: nòng cốt, ổn định. |
-| Kinh doanh | Doanh thu/lãi lỗ theo khách hàng | ✅ Đã rõ | Top khách hàng thay đổi thứ hạng thường xuyên trong top 20 |
-| Kinh doanh | Doanh thu/lãi lỗ theo Khối-Phòng-NV | ✅ Đã rõ | Khối kinh doanh trực tiếp luôn đạt KPI tốt nhất |
-| Kinh doanh | Tình trạng đơn hàng | ✅ Đã rõ | Cần xác nhận danh sách trạng thái cụ thể trong hệ thống FT |
-| Kinh doanh | Tình trạng xuất hóa đơn | ✅ Đã rõ | Là 1 trạng thái trong quy trình đơn hàng |
-| Khách hàng | Tăng giảm loại KH (A/B/C) | ⛔ Cần làm rõ | **Ưu tiên cao nhất** — ảnh hưởng trực tiếp RBAC Tuần 3 |
-| Khách hàng | Theo nguồn khách hàng | ⛔ Cần làm rõ | |
-| Khách hàng | CRM | ⛔ Cần làm rõ | |
-| Pricing | Thành đơn | ⛔ Cần làm rõ | |
-| Pricing | Nhà cung cấp | ⛔ Cần làm rõ | |
-| Chi phí | Theo Khối | ⛔ Cần làm rõ | Nguồn: AMIS |
-| Chi phí | Theo Nhóm (LĐ/QL/Frontline/Middle/Backend) | ⛔ Cần làm rõ | Cần xác nhận ranh giới 5 nhóm |
-| Công nợ | Khối → Phòng → Kinh doanh | ⛔ Cần làm rõ | **Ưu tiên cao** — ngưỡng quá hạn ảnh hưởng cảnh báo/màu sắc dashboard |
-| Dòng tiền | Thu/chi, tồn quỹ | ⛔ Cần làm rõ | Nguồn: AMIS (cần xác nhận chính xác) |
+Chi tiết đầy đủ (bảng 14 dòng, trạng thái Đã rõ/Cần làm rõ, ghi chú công thức) đã tách sang `.claude/rules/trang-thai-yeu-cau.md` — **tự động nạp khi làm việc trong `src/services/`, `src/db/`, hoặc `docs/requirements/`**, không tải khi làm việc ở chỗ khác (auth, deploy, UI...) để tiết kiệm ngữ cảnh. File đó cũng gồm danh sách 9/14 yêu cầu còn tồn đọng — chưa code logic cho đến khi chốt.
 
-## 8. Yêu cầu còn tồn đọng — KHÔNG code logic tương ứng cho đến khi chốt
-
-Còn 9/14 dòng "Cần làm rõ", cần phỏng vấn Trưởng phòng Kế toán – Tài chính (Chi phí theo Khối/Nhóm, Công nợ, Dòng tiền) và bổ sung với Trưởng phòng Kinh doanh/CSKH (tiêu chí A/B/C, nguồn KH, CRM, Pricing). Ưu tiên nhất: **tiêu chí phân loại KH A/B/C** và **ngưỡng công nợ quá hạn**. Xem chi tiết tại `docs/teaching-notes/huong-dan/HD-03-thu-thap-yeu-cau.md` và Sheet 1 của `Bieu_mau_Yeu_cau_va_RACI_LACCO.xlsx`.
-
-## 9. Hướng dẫn khi Compact
+## 8. Hướng dẫn khi Compact
 
 Khi chạy `/compact` (kể cả không kèm chỉ dẫn thủ công), luôn ưu tiên giữ lại:
 
@@ -131,7 +112,8 @@ Khi chạy `/compact` (kể cả không kèm chỉ dẫn thủ công), luôn ưu
 
 Nếu nội dung sắp bị tóm tắt liên quan đến quyết định RBAC, bảo mật, hoặc công thức nghiệp vụ đã "Đã rõ" — giữ nguyên văn, không diễn giải lại, vì sai lệch ở đây ảnh hưởng trực tiếp đến logic sẽ code sau này.
 
-## 10. Lịch sử phiên bản
+## 9. Lịch sử phiên bản
 
 - **v1 (13/08/2026):** Bản đầu tiên, soạn sau bước 1.4 (scaffold). Dựa trên yêu cầu đã "Đã rõ" của nhóm Kinh doanh (5/14). Phần RBAC A/B/C và Chi phí/Công nợ/Dòng tiền còn khung, chưa có công thức.
 - **v1.1 (13/08/2026):** Bổ sung mục 9 — Hướng dẫn khi Compact. Lý do: chạy `/compact` không kèm chỉ dẫn thủ công, rủi ro mất chi tiết context giữa các phiên làm việc dài.
+- **v1.2 (13/08/2026):** Tách bảng trạng thái 14 dòng yêu cầu (trước là mục 7+8) sang `.claude/rules/trang-thai-yeu-cau.md`, dùng cơ chế path-scoped rules của Claude Code — nội dung thay đổi thường xuyên, không nên nằm trong file "luật chơi" chính. CLAUDE.md giảm còn 9 mục, ~100 dòng.
