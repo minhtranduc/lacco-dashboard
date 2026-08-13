@@ -1,7 +1,7 @@
 # CLAUDE.md — lacco-dashboard
 
 > File context gốc repo, giúp Claude Code hiểu dự án ngay từ đầu mỗi phiên, không cần giải thích lại từ đầu.
-> **Phiên bản:** v1 — 13/08/2026 | **Nguồn:** Tài liệu Kiến trúc Hệ thống, Kế hoạch triển khai Dashboard LACCO, Sheet 1 "Mẫu thu thập yêu cầu" (Bieu_mau_Yeu_cau_va_RACI_LACCO.xlsx — 5/14 dòng đã "Đã rõ").
+> **Phiên bản:** v1.1 — 13/08/2026 | **Nguồn:** Tài liệu Kiến trúc Hệ thống, Kế hoạch triển khai Dashboard LACCO, Sheet 1 "Mẫu thu thập yêu cầu" (Bieu_mau_Yeu_cau_va_RACI_LACCO.xlsx — 5/14 dòng đã "Đã rõ").
 > **Cần cập nhật lên v2** sau khi hoàn tất phỏng vấn Trưởng phòng Kế toán – Tài chính (9/14 dòng còn "Cần làm rõ"), trước khi thiết kế schema chi tiết ở Tuần 2.
 
 ## 1. Bối cảnh dự án
@@ -119,6 +119,19 @@ Nguồn: Tài liệu Kiến trúc Hệ thống + Sheet 1 "Mẫu thu thập yêu 
 
 Còn 9/14 dòng "Cần làm rõ", cần phỏng vấn Trưởng phòng Kế toán – Tài chính (Chi phí theo Khối/Nhóm, Công nợ, Dòng tiền) và bổ sung với Trưởng phòng Kinh doanh/CSKH (tiêu chí A/B/C, nguồn KH, CRM, Pricing). Ưu tiên nhất: **tiêu chí phân loại KH A/B/C** và **ngưỡng công nợ quá hạn**. Xem chi tiết tại `docs/teaching-notes/huong-dan/HD-03-thu-thap-yeu-cau.md` và Sheet 1 của `Bieu_mau_Yeu_cau_va_RACI_LACCO.xlsx`.
 
-## 9. Lịch sử phiên bản
+## 9. Hướng dẫn khi Compact
+
+Khi chạy `/compact` (kể cả không kèm chỉ dẫn thủ công), luôn ưu tiên giữ lại:
+
+- **Danh sách file đã sửa/tạo** trong phiên hiện tại (đường dẫn cụ thể, không chỉ tên chung chung).
+- **Quyết định kiến trúc hoặc kỹ thuật đã chốt**, kèm lý do — không chỉ kết luận, phải giữ cả "vì sao chọn cách này, không chọn cách khác".
+- **Việc còn dang dở / TODO chưa hoàn thành**, ghi rõ đang ở bước nào, còn thiếu gì mới coi là xong.
+- **Bước đang thực hiện trong roadmap** (mã bước, ví dụ 1.5, 2.1...) — đối chiếu với `Lich_trinh_thuc_hien_8_tuan_LACCO.xlsx`.
+- **Lệnh/câu prompt vừa dùng thành công** nếu là một pattern nên tái sử dụng (ví dụ prompt scaffold, prompt review trước commit).
+
+Nếu nội dung sắp bị tóm tắt liên quan đến quyết định RBAC, bảo mật, hoặc công thức nghiệp vụ đã "Đã rõ" — giữ nguyên văn, không diễn giải lại, vì sai lệch ở đây ảnh hưởng trực tiếp đến logic sẽ code sau này.
+
+## 10. Lịch sử phiên bản
 
 - **v1 (13/08/2026):** Bản đầu tiên, soạn sau bước 1.4 (scaffold). Dựa trên yêu cầu đã "Đã rõ" của nhóm Kinh doanh (5/14). Phần RBAC A/B/C và Chi phí/Công nợ/Dòng tiền còn khung, chưa có công thức.
+- **v1.1 (13/08/2026):** Bổ sung mục 9 — Hướng dẫn khi Compact. Lý do: chạy `/compact` không kèm chỉ dẫn thủ công, rủi ro mất chi tiết context giữa các phiên làm việc dài.
