@@ -1,8 +1,8 @@
 # CLAUDE.md — lacco-dashboard
 
 > File context gốc repo, giúp Claude Code hiểu dự án ngay từ đầu mỗi phiên, không cần giải thích lại từ đầu.
-> **Phiên bản:** v1.2 — 13/08/2026 | **Nguồn:** Tài liệu Kiến trúc Hệ thống, Kế hoạch triển khai Dashboard LACCO, Sheet 1 "Mẫu thu thập yêu cầu" (Bieu_mau_Yeu_cau_va_RACI_LACCO.xlsx — 5/14 dòng đã "Đã rõ"). Bảng trạng thái yêu cầu chi tiết: xem `.claude/rules/trang-thai-yeu-cau.md`.
-> **Cần cập nhật lên v2** sau khi hoàn tất phỏng vấn Trưởng phòng Kế toán – Tài chính (9/14 dòng còn "Cần làm rõ"), trước khi thiết kế schema chi tiết ở Tuần 2.
+> **Phiên bản:** v2 — 17/08/2026 | **Nguồn:** Tài liệu Kiến trúc Hệ thống, Kế hoạch triển khai Dashboard LACCO, Sheet 1 "Mẫu thu thập yêu cầu" (Bieu_mau_Yeu_cau_va_RACI_LACCO.xlsx — 12/14 dòng "Đã rõ", 2/14 chốt chuyển sang Giai đoạn 2). Bảng trạng thái yêu cầu chi tiết: xem `.claude/rules/trang-thai-yeu-cau.md`.
+> Phỏng vấn thu thập yêu cầu (bước 1.3) đã hoàn thành 17/08/2026. Chỉ còn 2 báo cáo ngoài phạm vi Giai đoạn 1: **CRM** (chưa có dữ liệu trên hệ thống) và **Dòng tiền** (nguồn AMIS chưa xác nhận) — cả hai đã chốt dời sang Giai đoạn 2, không dựng logic/schema cho 2 phần này ở Giai đoạn 1.
 
 ## 1. Bối cảnh dự án
 
@@ -86,7 +86,7 @@ alembic upgrade head
 ## 6. RBAC & bảo mật — BẮT BUỘC, không thương lượng
 
 - **3 cấp quyền:** Admin (quản trị hệ thống) / Manager (chỉnh sửa, cập nhật dữ liệu và xem báo cáo) / User (chỉ xem báo cáo).
-- **Phân quyền theo Khối/Phòng và loại khách hàng A/B/C** — KH loại A do Giám đốc Khối quản lý, loại B do Trưởng phòng, loại C do nhân viên kinh doanh. **Tiêu chí xếp loại A/B/C cụ thể vẫn đang "Cần làm rõ"** (xem mục 8) — chưa code phần lọc theo A/B/C cho đến khi có câu trả lời.
+- **Phân quyền theo Khối/Phòng và loại khách hàng A/B/C** — KH loại A do Giám đốc Khối quản lý, loại B do Trưởng phòng, loại C do nhân viên kinh doanh. **Tiêu chí xếp loại A/B/C đã "Đã rõ" (17/08/2026):** dùng nguyên trường **"Phân loại"** đã có sẵn trong hệ thống FT — không tự định nghĩa lại ngưỡng xếp hạng, chỉ đọc giá trị có sẵn. Đã có thể code phần lọc/RBAC theo A/B/C dựa trên trường này.
 - **Rủi ro bảo mật nghiêm trọng nhất của dự án** (đã ghi trong Kế hoạch triển khai, mục 7): Streamlit chia sẻ state ở cấp module giữa các phiên người dùng. Nếu `cache_data`/`cache_resource` không gắn tham số theo user, dữ liệu tài chính của user A có thể lộ sang user B.
   - **Quy tắc bắt buộc:** mọi `@st.cache_data` / `@st.cache_resource` PHẢI nhận tham số gắn với `user_id` hoặc `role`.
   - **Cấm tuyệt đối:** biến global chứa dữ liệu nghiệp vụ (số liệu tài chính, danh sách khách hàng...).
@@ -98,7 +98,7 @@ alembic upgrade head
 
 Nguyên tắc: chỉ code phần logic khi trạng thái là **Đã rõ**; phần "Cần làm rõ" chỉ dựng khung UI/schema, không hardcode công thức đoán mò.
 
-Chi tiết đầy đủ (bảng 14 dòng, trạng thái Đã rõ/Cần làm rõ, ghi chú công thức) đã tách sang `.claude/rules/trang-thai-yeu-cau.md` — **tự động nạp khi làm việc trong `src/services/`, `src/db/`, hoặc `docs/requirements/`**, không tải khi làm việc ở chỗ khác (auth, deploy, UI...) để tiết kiệm ngữ cảnh. File đó cũng gồm danh sách 9/14 yêu cầu còn tồn đọng — chưa code logic cho đến khi chốt.
+Chi tiết đầy đủ (bảng 14 dòng, trạng thái Đã rõ/Cần làm rõ, ghi chú công thức) đã tách sang `.claude/rules/trang-thai-yeu-cau.md` — **tự động nạp khi làm việc trong `src/services/`, `src/db/`, hoặc `docs/requirements/`**, không tải khi làm việc ở chỗ khác (auth, deploy, UI...) để tiết kiệm ngữ cảnh. Sau đợt phỏng vấn 17/08/2026: 12/14 dòng "Đã rõ" — chỉ còn **CRM** và **Dòng tiền** ở trạng thái "Cần làm rõ", cả hai đã chốt dời sang Giai đoạn 2 (không phải "chưa phỏng vấn" mà là "ngoài phạm vi Giai đoạn 1") — không code logic, không cần dựng cả UI/schema cho 2 phần này ở Giai đoạn 1.
 
 ## 8. Hướng dẫn khi Compact
 
@@ -117,3 +117,4 @@ Nếu nội dung sắp bị tóm tắt liên quan đến quyết định RBAC, b
 - **v1 (13/08/2026):** Bản đầu tiên, soạn sau bước 1.4 (scaffold). Dựa trên yêu cầu đã "Đã rõ" của nhóm Kinh doanh (5/14). Phần RBAC A/B/C và Chi phí/Công nợ/Dòng tiền còn khung, chưa có công thức.
 - **v1.1 (13/08/2026):** Bổ sung mục 9 — Hướng dẫn khi Compact. Lý do: chạy `/compact` không kèm chỉ dẫn thủ công, rủi ro mất chi tiết context giữa các phiên làm việc dài.
 - **v1.2 (13/08/2026):** Tách bảng trạng thái 14 dòng yêu cầu (trước là mục 7+8) sang `.claude/rules/trang-thai-yeu-cau.md`, dùng cơ chế path-scoped rules của Claude Code — nội dung thay đổi thường xuyên, không nên nằm trong file "luật chơi" chính. CLAUDE.md giảm còn 9 mục, ~100 dòng.
+- **v2 (17/08/2026):** Cập nhật sau khi hoàn thành bước 1.3 (phỏng vấn thu thập yêu cầu). Kết quả: 12/14 dòng yêu cầu "Đã rõ" (tăng từ 5/14), gồm cả tiêu chí xếp loại KH A/B/C (mục 6 — dùng trường "Phân loại" có sẵn trong FT, đã có thể code RBAC A/B/C) và nguồn khách hàng. Chỉ còn 2/14 "Cần làm rõ" — **CRM** và **Dòng tiền** — cả hai đã chốt dời sang Giai đoạn 2 (ngoài phạm vi, không phải chờ trả lời thêm). Bảng chi tiết đã đồng bộ tại `.claude/rules/trang-thai-yeu-cau.md`.
