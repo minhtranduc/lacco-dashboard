@@ -84,7 +84,7 @@ erDiagram
 
 ## Việc cần xác nhận trước khi sang bước 2.2 (chưa đủ dữ liệu để tự quyết)
 
-*(Cập nhật 22/08/2026: mục #4 — rủi ro cao nhất — đã được COO xác nhận, xem bên dưới. Còn 8/9 mục mở, không mục nào chặn tiến độ bước 2.2, có thể vừa code vừa chốt dần.)*
+*(Cập nhật 22/08/2026: mục #4 — rủi ro cao nhất — và mục #10 (thang điểm `score`) đã được COO xác nhận, xem chi tiết bên dưới. Còn 8/10 mục mở, không mục nào chặn tiến độ, có thể vừa code vừa chốt dần.)*
 
 1. **Danh sách giá trị cụ thể của `sales_order.status`** — RACI ghi "Cần xác nhận danh sách trạng thái cụ thể trong hệ thống FT" dù dòng này đã "Đã rõ" ở mức khái niệm. Cần Trưởng phòng Vận hành cung cấp danh sách enum thật (VD: Mới tạo, Đang xử lý, Đang vận chuyển, Đã giao, Huỷ...).
 2. **`invoice_status`** tương tự — là 1 giá trị trong cùng quy trình trạng thái đơn hàng hay là field độc lập? Thiết kế hiện tại giả định là field riêng trên `sales_order` cho đơn giản — cần xác nhận có đúng không.
@@ -95,9 +95,9 @@ erDiagram
 7. **`price_request.customer_id` nullable — vì sao và có chồng phạm vi CRM không?** Giả định hiện tại: cho phép null khi báo giá cho khách hàng tiềm năng chưa có trong `customer` (chưa từng phát sinh đơn). Đây là suy luận, chưa có trong phỏng vấn nghiệp vụ. Cần xác nhận có đúng lý do này không — và nếu đúng, cần lưu ý ranh giới: KHÔNG mở rộng bảng này thành nơi lưu thông tin lead/khách hàng tiềm năng (đó là phạm vi CRM, đã chốt dời Giai đoạn 2).
 8. **Enum chưa liệt kê giá trị cụ thể:** `import_history.status` (VD: success/partial/failed?) và `audit_log.action` (VD: create/update/delete?) — chưa có trong yêu cầu nghiệp vụ vì đây là bảng kỹ thuật/audit, không thuộc 14 dòng RACI, nhưng vẫn cần chốt danh sách giá trị cụ thể trước khi sinh SQLAlchemy Enum ở bước 2.2 để tránh tự đoán.
 9. **`users.employee_id` nullable** — giả định lý do: có tài khoản hệ thống (VD: Admin kỹ thuật) không gắn với 1 nhân viên nghiệp vụ cụ thể trong bảng `employee`. Cần COO xác nhận giả định này đúng, hoặc mọi tài khoản đều bắt buộc gắn nhân viên (khi đó bỏ nullable).
-10. **`supplier_evaluation.score` — thang điểm 0–100 hay 1–5?** Phát sinh ở bước 2.2 khi sinh model. Không chặn bước 2.3 (Numeric(5,2) chứa được cả 2 thang), chỉ cần chốt trước khi `data-import-agent` (bước 2.4) viết validate Pandera cho cột này.
+10. ~~**`supplier_evaluation.score` — thang điểm 0–100 hay 1–5?**~~ — **Đã xác nhận (22/08/2026, COO):** giữ thang điểm **0–100**, đúng như giả định mặc định `data-import-agent` đã dùng để viết Pandera schema (`src/services/import_schemas/business_schemas.py`). Không cần sửa gì thêm ở schema hay code — mục này chính thức đóng.
 
-    **Cập nhật 22/08/2026 (bước 2.4, `data-import-agent`):** Đã **TỰ CHỌN thang điểm 0–100** làm mặc định để viết được Pandera schema validate cột này (`src/services/import_schemas/business_schemas.py`). Lý do: `Numeric(5,2)` đã chọn ở bước 2.2 (chứa tối đa 999.99) phù hợp hơn với thang rộng 0–100 (tận dụng được độ chính xác thập phân) so với thang hẹp 1–5 (thừa độ chính xác). Đây là **giả định mặc định đang chờ COO xác nhận lại**, KHÔNG phải xác nhận chính thức — nếu COO chốt thang 1–5, chỉ cần đổi khoảng `Check` trong Pandera schema (0 ≤ score ≤ 100 → 1 ≤ score ≤ 5), không cần đổi cấu trúc bảng. Đã tiếp tục làm với giả định này để không chặn tiến độ bước 2.4.
+    *(Lịch sử: phát sinh ở bước 2.2 khi sinh model với kiểu `Numeric(5,2)` — đủ chứa cả 2 thang nên không chặn bước 2.3. Đến bước 2.4, `data-import-agent` tạm chọn 0–100 làm mặc định để viết được Pandera Check, có ghi chú rõ là giả định chờ xác nhận. COO xác nhận chính thức giữ nguyên 0–100 khi review bước 2.4.)*
 
 ## Cập nhật sau bước 2.2 (sinh SQLAlchemy models) — 22/08/2026
 
