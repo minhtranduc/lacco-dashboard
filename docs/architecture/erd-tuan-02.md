@@ -95,6 +95,15 @@ erDiagram
 7. **`price_request.customer_id` nullable — vì sao và có chồng phạm vi CRM không?** Giả định hiện tại: cho phép null khi báo giá cho khách hàng tiềm năng chưa có trong `customer` (chưa từng phát sinh đơn). Đây là suy luận, chưa có trong phỏng vấn nghiệp vụ. Cần xác nhận có đúng lý do này không — và nếu đúng, cần lưu ý ranh giới: KHÔNG mở rộng bảng này thành nơi lưu thông tin lead/khách hàng tiềm năng (đó là phạm vi CRM, đã chốt dời Giai đoạn 2).
 8. **Enum chưa liệt kê giá trị cụ thể:** `import_history.status` (VD: success/partial/failed?) và `audit_log.action` (VD: create/update/delete?) — chưa có trong yêu cầu nghiệp vụ vì đây là bảng kỹ thuật/audit, không thuộc 14 dòng RACI, nhưng vẫn cần chốt danh sách giá trị cụ thể trước khi sinh SQLAlchemy Enum ở bước 2.2 để tránh tự đoán.
 9. **`users.employee_id` nullable** — giả định lý do: có tài khoản hệ thống (VD: Admin kỹ thuật) không gắn với 1 nhân viên nghiệp vụ cụ thể trong bảng `employee`. Cần COO xác nhận giả định này đúng, hoặc mọi tài khoản đều bắt buộc gắn nhân viên (khi đó bỏ nullable).
+10. **`supplier_evaluation.score` — thang điểm 0–100 hay 1–5?** Phát sinh ở bước 2.2 khi sinh model. Không chặn bước 2.3 (Numeric(5,2) chứa được cả 2 thang), chỉ cần chốt trước khi `data-import-agent` (bước 2.4) viết validate Pandera cho cột này.
+
+## Cập nhật sau bước 2.2 (sinh SQLAlchemy models) — 22/08/2026
+
+Khi sinh code model tại `src/db/models/`, phát sinh thêm 2 quyết định kỹ thuật ngoài 9 mục ERD gốc:
+
+- **`period` (trên `cost`, `budget`, `personnel_cost`, `supplier_evaluation`) chọn kiểu `Date`**, quy ước lưu ngày đại diện đầu kỳ — **chấp nhận làm mặc định**, không cần COO xác nhận thêm: đây là lựa chọn kỹ thuật thuần tuý, không đổi ý nghĩa nghiệp vụ, và không phá schema nếu sau này lộ ra tần suất thật khác tháng (vẫn dùng `Date`, chỉ đổi cách truy vấn nhóm theo tuần/quý ở `src/services/`).
+- **`supplier_evaluation.score` dùng `Numeric(5,2)`** — đủ chứa cả thang điểm 0–100 lẫn 1–5 (không cần đổi schema dù chọn thang nào), nhưng **chưa rõ thang điểm thật** — thêm vào danh sách "cần xác nhận" thành **mục #10** bên dưới, không chặn bước 2.3.
+- Agent tự thêm `unique=True` cho `service.name`, `customer.code`, `users.username` — ràng buộc kỹ thuật hợp lý (các giá trị này về bản chất phải duy nhất), **chấp nhận**, không phải thay đổi cấu trúc bảng/cột.
 
 ## Không nằm trong phạm vi bước 2.1 (để bước sau)
 

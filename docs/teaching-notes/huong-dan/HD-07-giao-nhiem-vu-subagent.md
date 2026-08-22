@@ -16,11 +16,11 @@ Thiết kế ERD (sơ đồ quan hệ thực thể) cho toàn bộ 12 yêu cầu
 
 Claude Code CLI báo: **không gọi trực tiếp được subagent tuỳ biến `db-schema-agent` bằng tên** ("không nằm trong danh sách loại agent khả dụng" của harness) — dù file `.claude/agents/db-schema-agent.md` đã tồn tại đúng định dạng. CLI tự xử lý bằng cách giao việc cho 1 agent loại "general-purpose", nhưng dán kèm toàn bộ nội dung persona/nguyên tắc từ `db-schema-agent.md` vào prompt — kết quả review vẫn tuân đúng các ràng buộc đã định nghĩa, chỉ là không thông qua đúng cơ chế subagent-theo-tên như kế hoạch ban đầu.
 
-**Chưa xác định chắc chắn nguyên nhân** — có 2 khả năng, cần kiểm chứng ở bước 2.2:
-- Giống hệt bài học ở HD-06 (MCP server cần restart phiên CLI mới được nhận diện) — subagent vừa tạo trong cùng phiên có thể cũng cần restart mới được nạp vào danh sách agent khả dụng.
-- Hoặc cơ chế gọi subagent theo tên tường minh (không phải để Claude Code tự chọn theo `description`) có giới hạn khác ở phiên bản/harness đang dùng.
+**Đã xác minh ở bước 2.2 (22/08/2026, phiên CLI hoàn toàn mới):** không phải do phiên cũ chưa nạp lại — mở phiên mới và gọi trực tiếp `db-schema-agent` theo tên vẫn thất bại, lỗi rõ ràng: `Agent type 'db-schema-agent' not found — Available agents: claude, claude-code-guide, Explore, general-purpose, Plan, statusline-setup`.
 
-**Việc cần làm ở bước 2.2:** trước khi giao việc, restart phiên CLI, rồi thử gọi lại `db-schema-agent` bằng tên tường minh — nếu vẫn không được, chấp nhận dùng cách "general-purpose + dán persona" làm quy trình chính thức cho các subagent còn lại trong roadmap (`data-import-agent`, `auth-rbac-agent`...), không mất công thử lại nhiều lần.
+**Kết luận chính thức:** harness đang dùng chỉ cho phép gọi 1 danh sách cố định các loại agent tích hợp sẵn qua công cụ Task — **không** hỗ trợ gọi trực tiếp subagent tuỳ biến định nghĩa trong `.claude/agents/*.md` bằng tên, bất kể phiên mới hay cũ. Đây là giới hạn cố định của môi trường đang dùng, không phải lỗi cấu hình hay cần restart.
+
+**Quy ước chính thức từ đây về sau:** mọi lần giao việc cho subagent tuỳ biến (`data-import-agent` ở bước 2.4, `auth-rbac-agent` ở bước 3.1, v.v.) đều dùng cách "general-purpose + dán nguyên văn persona từ file `.claude/agents/*.md` vào prompt" ngay từ đầu — không cần thử gọi theo tên trước rồi mới rơi vào workaround nữa, việc này đã được xác minh chắc chắn, không cần lặp lại thử nghiệm.
 
 ## Kết quả review (thực hiện qua workaround nêu trên)
 
