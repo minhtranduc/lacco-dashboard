@@ -1,14 +1,14 @@
 # CLAUDE.md — lacco-dashboard
 
 > File context gốc repo, giúp Claude Code hiểu dự án ngay từ đầu mỗi phiên, không cần giải thích lại từ đầu.
-> **Phiên bản:** v2 — 17/08/2026 | **Nguồn:** Tài liệu Kiến trúc Hệ thống, Kế hoạch triển khai Dashboard LACCO, Sheet 1 "Mẫu thu thập yêu cầu" (Bieu_mau_Yeu_cau_va_RACI_LACCO.xlsx — 12/14 dòng "Đã rõ", 2/14 chốt chuyển sang Giai đoạn 2). Bảng trạng thái yêu cầu chi tiết: xem `.claude/rules/trang-thai-yeu-cau.md`.
+> **Phiên bản:** v3 — 22/08/2026 | **Nguồn:** Tài liệu Kiến trúc Hệ thống, Kế hoạch triển khai Dashboard LACCO, Sheet 1 "Mẫu thu thập yêu cầu" (Bieu_mau_Yeu_cau_va_RACI_LACCO.xlsx — 12/14 dòng "Đã rõ", 2/14 chốt chuyển sang Giai đoạn 2). Bảng trạng thái yêu cầu chi tiết: xem `.claude/rules/trang-thai-yeu-cau.md`.
 > Phỏng vấn thu thập yêu cầu (bước 1.3) đã hoàn thành 17/08/2026. Chỉ còn 2 báo cáo ngoài phạm vi Giai đoạn 1: **CRM** (chưa có dữ liệu trên hệ thống) và **Dòng tiền** (nguồn AMIS chưa xác nhận) — cả hai đã chốt dời sang Giai đoạn 2, không dựng logic/schema cho 2 phần này ở Giai đoạn 1.
 
 ## 1. Bối cảnh dự án
 
 LACCO là công ty Logistics & Giao nhận vận tải. Dự án xây dựng WebApp Dashboard hỗ trợ ra quyết định, cung cấp báo cáo kinh doanh/chi phí/khách hàng/đơn hàng gần thời gian thực cho Ban Lãnh đạo, Trưởng phòng và nhân viên.
 
-- **Phạm vi Giai đoạn 1 (hiện tại):** 6 nhóm báo cáo — Kinh doanh, Khách hàng, Pricing, Chi phí, Công nợ, Dòng tiền — cộng với tình trạng đơn hàng và tình trạng xuất hóa đơn.
+- **Phạm vi Giai đoạn 1 (hiện tại):** 5 nhóm báo cáo — Kinh doanh, Khách hàng, Pricing, Chi phí, Công nợ — cộng với tình trạng đơn hàng và tình trạng xuất hóa đơn. (Dòng tiền đã chốt dời Giai đoạn 2, xem ghi chú đầu file — trước bản v3 mục này liệt kê nhầm 6 nhóm gồm cả Dòng tiền, mâu thuẫn với ghi chú đầu file, đã sửa.)
 - **KHÔNG thuộc phạm vi Giai đoạn 1:** Báo cáo Marketing (đã xác nhận 20/07/2026, có thể xét lại ở Giai đoạn 2). Không tự ý code phần này.
 - **Người dùng:** một mình COO trực tiếp điều khiển Claude; không có đội dev backup — ưu tiên code rõ ràng, dễ đọc lại sau này hơn là tối ưu sớm.
 - **Nguồn dữ liệu:** Hệ thống FT (nghiệp vụ kinh doanh/đơn hàng) và AMIS (chi phí, công nợ, dòng tiền) — import qua Excel/CSV, không kết nối trực tiếp hệ thống nguồn ở Giai đoạn 1.
@@ -38,6 +38,8 @@ lacco-dashboard/
 Luồng dữ liệu: `Excel/CSV → Import → MySQL → SQLAlchemy → Pandas → Plotly → Streamlit → Browser`
 
 Nguyên tắc bắt buộc: **không trộn lẫn 3 lớp** — code truy vấn DB không được nằm trong `src/app/`, logic tính KPI không được nằm trong `src/db/`. Việc này để đổi giao diện không ảnh hưởng logic nghiệp vụ, và ngược lại.
+
+**Lưu ý vận hành khi giao việc cho subagent (`.claude/agents/*.md`):** harness Claude Code hiện tại KHÔNG hỗ trợ gọi subagent tuỳ biến trực tiếp theo tên qua Task tool — đã xác nhận chắc chắn ở bước 2.2 (kể cả phiên CLI hoàn toàn mới), xem `docs/teaching-notes/huong-dan/HD-07-giao-nhiem-vu-subagent.md`. Quy ước chính thức: luôn giao việc qua agent loại "general-purpose", dán nguyên văn toàn bộ nội dung persona từ file `.claude/agents/*.md` liên quan vào đầu prompt — không cần thử gọi theo tên trước.
 
 ## 3. Tech stack
 
@@ -70,17 +72,23 @@ Nguyên tắc bắt buộc: **không trộn lẫn 3 lớp** — code truy vấn 
 
 ## 5. Lệnh thường dùng
 
-*(Cập nhật khi có lệnh thật — hiện tại là placeholder cho Tuần 2 trở đi)*
+*(Migration và import đã chạy thật từ Tuần 2 — xem HD-09, HD-10. Lệnh app/test vẫn là placeholder, chờ có code thật ở Tuần 3+.)*
 
 ```bash
-# Chạy app local
+# Chạy app local (chưa có code thật — placeholder)
 streamlit run src/app/main.py
 
-# Chạy test
+# Chạy test (chưa có test thật — placeholder)
 pytest --cov=src
 
-# Migration
+# Migration (đã chạy thật lên MySQL "lacco", bước 2.3)
 alembic upgrade head
+
+# Sinh dữ liệu mẫu synthetic cho 18 bảng theo ERD (bước 2.4)
+python scripts/generate_synthetic_sample_data.py
+
+# Demo import + validate Pandera vào MySQL "lacco", gồm cả ca lỗi cố ý (bước 2.4)
+python scripts/run_synthetic_import_demo.py
 ```
 
 ## 6. RBAC & bảo mật — BẮT BUỘC, không thương lượng
@@ -118,3 +126,4 @@ Nếu nội dung sắp bị tóm tắt liên quan đến quyết định RBAC, b
 - **v1.1 (13/08/2026):** Bổ sung mục 9 — Hướng dẫn khi Compact. Lý do: chạy `/compact` không kèm chỉ dẫn thủ công, rủi ro mất chi tiết context giữa các phiên làm việc dài.
 - **v1.2 (13/08/2026):** Tách bảng trạng thái 14 dòng yêu cầu (trước là mục 7+8) sang `.claude/rules/trang-thai-yeu-cau.md`, dùng cơ chế path-scoped rules của Claude Code — nội dung thay đổi thường xuyên, không nên nằm trong file "luật chơi" chính. CLAUDE.md giảm còn 9 mục, ~100 dòng.
 - **v2 (17/08/2026):** Cập nhật sau khi hoàn thành bước 1.3 (phỏng vấn thu thập yêu cầu). Kết quả: 12/14 dòng yêu cầu "Đã rõ" (tăng từ 5/14), gồm cả tiêu chí xếp loại KH A/B/C (mục 6 — dùng trường "Phân loại" có sẵn trong FT, đã có thể code RBAC A/B/C) và nguồn khách hàng. Chỉ còn 2/14 "Cần làm rõ" — **CRM** và **Dòng tiền** — cả hai đã chốt dời sang Giai đoạn 2 (ngoài phạm vi, không phải chờ trả lời thêm). Bảng chi tiết đã đồng bộ tại `.claude/rules/trang-thai-yeu-cau.md`.
+- **v3 (22/08/2026):** Cập nhật sau khi hoàn thành Tuần 2 (schema, migration, import — 5/5 bước). ERD 18 bảng đã thiết kế và gần chốt xong (8/10 mục "cần xác nhận" còn mở, không mục nào chặn tiến độ — chi tiết `docs/architecture/erd-tuan-02.md`), SQLAlchemy models + Alembic migration đã chạy thật lên MySQL "lacco", pipeline import Pandera đã test cả đường thành công lẫn đường lỗi cố ý. 3 thay đổi trong bản này: (1) sửa mục 1 — còn 5/6 nhóm báo cáo trong phạm vi Giai đoạn 1 (Dòng tiền dời Giai đoạn 2), bản v1/v2 liệt kê nhầm 6 nhóm mâu thuẫn với ghi chú đầu file; (2) thêm lưu ý vận hành ở mục 2 về giới hạn không gọi được subagent tuỳ biến theo tên qua Task tool trong harness hiện tại (xem HD-07); (3) cập nhật mục 5 với các lệnh migration/sinh dữ liệu/import thật đã dùng ở Tuần 2, thay placeholder cũ.
