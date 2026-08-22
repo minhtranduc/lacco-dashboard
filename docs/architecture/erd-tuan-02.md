@@ -97,6 +97,8 @@ erDiagram
 9. **`users.employee_id` nullable** — giả định lý do: có tài khoản hệ thống (VD: Admin kỹ thuật) không gắn với 1 nhân viên nghiệp vụ cụ thể trong bảng `employee`. Cần COO xác nhận giả định này đúng, hoặc mọi tài khoản đều bắt buộc gắn nhân viên (khi đó bỏ nullable).
 10. **`supplier_evaluation.score` — thang điểm 0–100 hay 1–5?** Phát sinh ở bước 2.2 khi sinh model. Không chặn bước 2.3 (Numeric(5,2) chứa được cả 2 thang), chỉ cần chốt trước khi `data-import-agent` (bước 2.4) viết validate Pandera cho cột này.
 
+    **Cập nhật 22/08/2026 (bước 2.4, `data-import-agent`):** Đã **TỰ CHỌN thang điểm 0–100** làm mặc định để viết được Pandera schema validate cột này (`src/services/import_schemas/business_schemas.py`). Lý do: `Numeric(5,2)` đã chọn ở bước 2.2 (chứa tối đa 999.99) phù hợp hơn với thang rộng 0–100 (tận dụng được độ chính xác thập phân) so với thang hẹp 1–5 (thừa độ chính xác). Đây là **giả định mặc định đang chờ COO xác nhận lại**, KHÔNG phải xác nhận chính thức — nếu COO chốt thang 1–5, chỉ cần đổi khoảng `Check` trong Pandera schema (0 ≤ score ≤ 100 → 1 ≤ score ≤ 5), không cần đổi cấu trúc bảng. Đã tiếp tục làm với giả định này để không chặn tiến độ bước 2.4.
+
 ## Cập nhật sau bước 2.2 (sinh SQLAlchemy models) — 22/08/2026
 
 Khi sinh code model tại `src/db/models/`, phát sinh thêm 2 quyết định kỹ thuật ngoài 9 mục ERD gốc:

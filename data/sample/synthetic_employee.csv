@@ -1,0 +1,31 @@
+id,full_name,department_id,staff_group,position,is_active
+1,Nhân viên Demo 01,2,LĐ,Trưởng nhóm,False
+2,Nhân viên Demo 02,4,Frontline,Nhân viên,False
+3,Nhân viên Demo 03,9,QL,Trưởng phòng,True
+4,Nhân viên Demo 04,1,LĐ,Chuyên viên,True
+5,Nhân viên Demo 05,4,Middle,Nhân viên,True
+6,Nhân viên Demo 06,9,Frontline,Giám đốc Khối,True
+7,Nhân viên Demo 07,7,Frontline,Giám đốc Khối,True
+8,Nhân viên Demo 08,5,Backend,Nhân viên,True
+9,Nhân viên Demo 09,3,Middle,Trưởng nhóm,True
+10,Nhân viên Demo 10,5,Frontline,Trưởng nhóm,True
+11,Nhân viên Demo 11,2,QL,Nhân viên,True
+12,Nhân viên Demo 12,6,Backend,Giám đốc Khối,True
+13,Nhân viên Demo 13,5,Backend,Trưởng phòng,True
+14,Nhân viên Demo 14,9,Frontline,Trưởng phòng,True
+15,Nhân viên Demo 15,2,Middle,Giám đốc Khối,True
+16,Nhân viên Demo 16,6,Middle,Nhân viên,True
+17,Nhân viên Demo 17,1,Middle,Trưởng nhóm,True
+18,Nhân viên Demo 18,2,Backend,Nhân viên,True
+19,Nhân viên Demo 19,7,Frontline,Trưởng nhóm,True
+20,Nhân viên Demo 20,3,Frontline,Chuyên viên,True
+21,Nhân viên Demo 21,5,Middle,Nhân viên,True
+22,Nhân viên Demo 22,10,Middle,Giám đốc Khối,True
+23,Nhân viên Demo 23,4,Frontline,Trưởng phòng,True
+24,Nhân viên Demo 24,5,Backend,Giám đốc Khối,True
+25,Nhân viên Demo 25,4,Middle,Nhân viên,True
+26,Nhân viên Demo 26,4,Backend,Trưởng nhóm,True
+27,Nhân viên Demo 27,7,Frontline,Chuyên viên,True
+28,Nhân viên Demo 28,10,Backend,Trưởng nhóm,True
+29,Nhân viên Demo 29,4,Middle,Trưởng phòng,True
+30,Nhân viên Demo 30,8,Frontline,Chuyên viên,True

@@ -1,0 +1,11 @@
+id,name,division_id
+1,Phòng Kinh doanh Cước biển,1
+2,Phòng Kinh doanh Hải quan,1
+3,Phòng Vận hành Kho vận,2
+4,Phòng Vận hành Vận tải,2
+5,Phòng Pricing Cước,3
+6,Phòng Pricing Hải quan,3
+7,Phòng Kế toán,4
+8,Phòng Tài chính,4
+9,Phòng Nhân sự,5
+10,Phòng IT,5
