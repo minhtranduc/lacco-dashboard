@@ -1,7 +1,7 @@
 # CLAUDE.md — lacco-dashboard
 
 > File context gốc repo, giúp Claude Code hiểu dự án ngay từ đầu mỗi phiên, không cần giải thích lại từ đầu.
-> **Phiên bản:** v3 — 22/08/2026 | **Nguồn:** Tài liệu Kiến trúc Hệ thống, Kế hoạch triển khai Dashboard LACCO, Sheet 1 "Mẫu thu thập yêu cầu" (Bieu_mau_Yeu_cau_va_RACI_LACCO.xlsx — 12/14 dòng "Đã rõ", 2/14 chốt chuyển sang Giai đoạn 2). Bảng trạng thái yêu cầu chi tiết: xem `.claude/rules/trang-thai-yeu-cau.md`.
+> **Phiên bản:** v4 — 25/08/2026 | **Nguồn:** Tài liệu Kiến trúc Hệ thống, Kế hoạch triển khai Dashboard LACCO, Sheet 1 "Mẫu thu thập yêu cầu" (Bieu_mau_Yeu_cau_va_RACI_LACCO.xlsx — 12/14 dòng "Đã rõ", 2/14 chốt chuyển sang Giai đoạn 2). Bảng trạng thái yêu cầu chi tiết: xem `.claude/rules/trang-thai-yeu-cau.md`.
 > Phỏng vấn thu thập yêu cầu (bước 1.3) đã hoàn thành 17/08/2026. Chỉ còn 2 báo cáo ngoài phạm vi Giai đoạn 1: **CRM** (chưa có dữ liệu trên hệ thống) và **Dòng tiền** (nguồn AMIS chưa xác nhận) — cả hai đã chốt dời sang Giai đoạn 2, không dựng logic/schema cho 2 phần này ở Giai đoạn 1.
 
 ## 1. Bối cảnh dự án
@@ -72,13 +72,13 @@ Nguyên tắc bắt buộc: **không trộn lẫn 3 lớp** — code truy vấn 
 
 ## 5. Lệnh thường dùng
 
-*(Migration và import đã chạy thật từ Tuần 2 — xem HD-09, HD-10. Lệnh app/test vẫn là placeholder, chờ có code thật ở Tuần 3+.)*
+*(Migration và import đã chạy thật từ Tuần 2 — xem HD-09, HD-10. Lệnh app đã có code thật từ bước 3.1 (Auth & RBAC) — xem HD-11. Lệnh test vẫn là placeholder, chờ bước 3.3.)*
 
 ```bash
-# Chạy app local (chưa có code thật — placeholder)
+# Chạy app local (có code thật từ bước 3.1 — trang demo đăng nhập + hiển thị phạm vi RBAC, xem HD-11)
 streamlit run src/app/main.py
 
-# Chạy test (chưa có test thật — placeholder)
+# Chạy test (chưa có test thật — placeholder, chờ bước 3.3)
 pytest --cov=src
 
 # Migration (đã chạy thật lên MySQL "lacco", bước 2.3)
@@ -93,7 +93,7 @@ python scripts/run_synthetic_import_demo.py
 
 ## 6. RBAC & bảo mật — BẮT BUỘC, không thương lượng
 
-- **3 cấp quyền:** Admin (quản trị hệ thống) / Manager (chỉnh sửa, cập nhật dữ liệu và xem báo cáo) / User (chỉ xem báo cáo).
+- **3 cấp quyền:** Admin (quản trị hệ thống) / Manager (chỉnh sửa, cập nhật dữ liệu và xem báo cáo) / User (chỉ xem báo cáo). **Admin luôn xem toàn bộ dữ liệu (`unrestricted=True`), không giới hạn theo Khối/Phòng dù có gắn `employee_id` hay không** — quyết định chốt tại bước 3.1 (25/08/2026), xem HD-11. Phạm vi Khối/Phòng/A-B-C bên dưới chỉ áp dụng cho Manager/User.
 - **Phân quyền theo Khối/Phòng và loại khách hàng A/B/C** — KH loại A do Giám đốc Khối quản lý, loại B do Trưởng phòng, loại C do nhân viên kinh doanh. **Tiêu chí xếp loại A/B/C đã "Đã rõ" (17/08/2026):** dùng nguyên trường **"Phân loại"** đã có sẵn trong hệ thống FT — không tự định nghĩa lại ngưỡng xếp hạng, chỉ đọc giá trị có sẵn. Đã có thể code phần lọc/RBAC theo A/B/C dựa trên trường này.
 - **Rủi ro bảo mật nghiêm trọng nhất của dự án** (đã ghi trong Kế hoạch triển khai, mục 7): Streamlit chia sẻ state ở cấp module giữa các phiên người dùng. Nếu `cache_data`/`cache_resource` không gắn tham số theo user, dữ liệu tài chính của user A có thể lộ sang user B.
   - **Quy tắc bắt buộc:** mọi `@st.cache_data` / `@st.cache_resource` PHẢI nhận tham số gắn với `user_id` hoặc `role`.
@@ -127,3 +127,4 @@ Nếu nội dung sắp bị tóm tắt liên quan đến quyết định RBAC, b
 - **v1.2 (13/08/2026):** Tách bảng trạng thái 14 dòng yêu cầu (trước là mục 7+8) sang `.claude/rules/trang-thai-yeu-cau.md`, dùng cơ chế path-scoped rules của Claude Code — nội dung thay đổi thường xuyên, không nên nằm trong file "luật chơi" chính. CLAUDE.md giảm còn 9 mục, ~100 dòng.
 - **v2 (17/08/2026):** Cập nhật sau khi hoàn thành bước 1.3 (phỏng vấn thu thập yêu cầu). Kết quả: 12/14 dòng yêu cầu "Đã rõ" (tăng từ 5/14), gồm cả tiêu chí xếp loại KH A/B/C (mục 6 — dùng trường "Phân loại" có sẵn trong FT, đã có thể code RBAC A/B/C) và nguồn khách hàng. Chỉ còn 2/14 "Cần làm rõ" — **CRM** và **Dòng tiền** — cả hai đã chốt dời sang Giai đoạn 2 (ngoài phạm vi, không phải chờ trả lời thêm). Bảng chi tiết đã đồng bộ tại `.claude/rules/trang-thai-yeu-cau.md`.
 - **v3 (22/08/2026):** Cập nhật sau khi hoàn thành Tuần 2 (schema, migration, import — 5/5 bước). ERD 18 bảng đã thiết kế và gần chốt xong (8/10 mục "cần xác nhận" còn mở, không mục nào chặn tiến độ — chi tiết `docs/architecture/erd-tuan-02.md`), SQLAlchemy models + Alembic migration đã chạy thật lên MySQL "lacco", pipeline import Pandera đã test cả đường thành công lẫn đường lỗi cố ý. 3 thay đổi trong bản này: (1) sửa mục 1 — còn 5/6 nhóm báo cáo trong phạm vi Giai đoạn 1 (Dòng tiền dời Giai đoạn 2), bản v1/v2 liệt kê nhầm 6 nhóm mâu thuẫn với ghi chú đầu file; (2) thêm lưu ý vận hành ở mục 2 về giới hạn không gọi được subagent tuỳ biến theo tên qua Task tool trong harness hiện tại (xem HD-07); (3) cập nhật mục 5 với các lệnh migration/sinh dữ liệu/import thật đã dùng ở Tuần 2, thay placeholder cũ.
+- **v4 (25/08/2026):** Cập nhật sau bước 3.1 (Auth & RBAC) và 3.2 (qa-reviewer-agent). 2 thay đổi: (1) mục 5 — lệnh `streamlit run src/app/main.py` không còn là placeholder, đã có code thật (đăng nhập bcrypt + hiển thị phạm vi RBAC) từ bước 3.1; lệnh `pytest` vẫn placeholder, chờ bước 3.3; (2) mục 6 — ghi rõ quyết định "Admin luôn xem toàn bộ dữ liệu, không giới hạn theo Khối/Phòng" đã chốt tại bước 3.1, tránh lặp lại tình huống agent phải tự đoán như lúc `auth-rbac-agent` mới code lần đầu.
