@@ -15,18 +15,14 @@ theo `employee_id` (User) / `department_id` (Manager) / `division_id`
 định kỹ thuật để middleware CHẠY ĐƯỢC cho demo bước 3.1, KHÔNG phải nghiệp
 vụ đã COO chốt — cần xác nhận trước khi dùng cho báo cáo thật.
 
-*** MƠ HỒ CHƯA XÁC NHẬN: vai trò "Admin" (users.role) ***
-CLAUDE.md mục 6 định nghĩa `users.role = Admin` là "quản trị hệ thống",
-nhưng cũng mục 6 lại nói KH loại A do "Giám đốc Khối" quản lý (theo
-`division`) — 2 khái niệm này KHÔNG chắc là một, `users.role` chỉ có 3 giá
-trị (Admin/Manager/User), không có giá trị riêng cho "Giám đốc Khối".
-Module này chọn quy tắc sau (default an toàn theo hướng least-privilege,
-CÓ THỂ SAI, cần COO xác nhận):
-  - Admin CÓ gắn `employee_id` -> coi như "Giám đốc Khối", giới hạn xem
-    theo `division` của nhân viên đó (KHÔNG mở toàn hệ thống).
-  - Admin KHÔNG gắn `employee_id` (employee_id NULL) -> coi là tài khoản
-    hệ thống thuần tuý ("Admin quản trị hệ thống" đúng nghĩa), trả về
-    `unrestricted=True` (xem toàn bộ khách hàng).
+*** ĐÃ XÁC NHẬN: vai trò "Admin" (users.role) — COO, 25/08/2026 ***
+CLAUDE.md mục 6 định nghĩa `users.role = Admin` là "quản trị hệ thống" —
+KHÁC với "Giám đốc Khối" (đó là vai trò nghiệp vụ theo `division`, không
+map 1-1 vào `users.role`). COO đã xác nhận 25/08/2026: **Admin luôn xem
+toàn bộ dữ liệu (`unrestricted=True`), KHÔNG giới hạn theo Khối/Phòng dù
+tài khoản Admin có gắn `employee_id` hay không** — khác với Manager/User
+vốn vẫn giới hạn theo Khối/Phòng/A-B-C như thiết kế ban đầu. Đây KHÔNG
+còn là suy luận kỹ thuật, không cần re-confirm lại nữa.
 """
 
 from __future__ import annotations
@@ -83,30 +79,44 @@ def compute_data_scope(user_id: int, *, engine=None) -> DataScope:
     employee_id = user["employee_id"]
     username = user["username"]
 
+    if role == UserRole.ADMIN:
+        # COO xác nhận 25/08/2026: Admin luôn xem toàn bộ dữ liệu, không
+        # giới hạn theo Khối/Phòng — BỎ QUA hoàn toàn việc có/không có
+        # employee_id (khác Manager/User, vẫn giới hạn theo Khối/Phòng/ABC
+        # như cũ). employee_id/department_id/division_id vẫn được điền vào
+        # DataScope nếu có, chỉ để hiển thị thông tin — KHÔNG dùng để giới
+        # hạn phạm vi.
+        context = (
+            auth_service.fetch_employee_context(engine, employee_id)
+            if employee_id is not None
+            else None
+        )
+        logger.info(
+            "user_id={} role=Admin -> unrestricted=True (COO xác nhận "
+            "25/08/2026: Admin luôn xem toàn bộ, không giới hạn theo "
+            "Khối/Phòng dù có gắn employee_id={}).",
+            user_id,
+            employee_id,
+        )
+        all_ids = auth_service.fetch_all_customer_ids(engine)
+        return DataScope(
+            user_id=user_id,
+            username=username,
+            role=role,
+            employee_id=employee_id,
+            department_id=context["department_id"] if context else None,
+            division_id=context["division_id"] if context else None,
+            classification_hint=None,
+            customer_ids=frozenset(all_ids),
+            unrestricted=True,
+            description=(
+                "Admin quản trị hệ thống — xem toàn bộ khách hàng (COO xác "
+                "nhận 25/08/2026: không giới hạn theo Khối/Phòng dù có gắn "
+                "employee_id)."
+            ),
+        )
+
     if employee_id is None:
-        if role == UserRole.ADMIN:
-            logger.info(
-                "user_id={} (Admin, employee_id=NULL) -> unrestricted "
-                "(suy luận: tài khoản hệ thống thuần tuý, CHƯA xác nhận "
-                "với COO).",
-                user_id,
-            )
-            all_ids = auth_service.fetch_all_customer_ids(engine)
-            return DataScope(
-                user_id=user_id,
-                username=username,
-                role=role,
-                employee_id=None,
-                department_id=None,
-                division_id=None,
-                classification_hint=None,
-                customer_ids=frozenset(all_ids),
-                unrestricted=True,
-                description=(
-                    "Admin quản trị hệ thống (không gắn nhân viên cụ thể) "
-                    "— xem toàn bộ khách hàng (suy luận, cần COO xác nhận)."
-                ),
-            )
         logger.warning(
             "user_id={} role={} không có employee_id -> không thể tính "
             "phạm vi Khối/Phòng/NV, trả về phạm vi rỗng.",
@@ -166,7 +176,7 @@ def compute_data_scope(user_id: int, *, engine=None) -> DataScope:
             f"employee_id={employee_id} phụ trách (suy ra từ sales_order/"
             "debt/price_request)."
         )
-    elif role == UserRole.MANAGER:
+    else:  # UserRole.MANAGER — role Admin đã return sớm ở trên (unrestricted)
         customer_ids = auth_service.fetch_customer_ids_for_department(
             engine, department_id
         )
@@ -175,17 +185,6 @@ def compute_data_scope(user_id: int, *, engine=None) -> DataScope:
             "Manager (Trưởng phòng) — KH loại B, xem KH thuộc "
             f"department_id={department_id} (suy ra từ sales_order/debt/"
             "price_request)."
-        )
-    else:  # UserRole.ADMIN có gắn employee_id
-        customer_ids = auth_service.fetch_customer_ids_for_division(
-            engine, division_id
-        )
-        classification_hint = CustomerClassification.A
-        description = (
-            f"Admin có gắn employee_id={employee_id} — coi như Giám đốc "
-            f"Khối, KH loại A, xem KH thuộc division_id={division_id} "
-            "(suy luận, CẦN COO XÁC NHẬN — có thể Admin phải luôn xem "
-            "toàn bộ hệ thống thay vì giới hạn theo Khối)."
         )
 
     return DataScope(
