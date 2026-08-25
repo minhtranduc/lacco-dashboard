@@ -104,6 +104,9 @@ def _render_scope(session: dict) -> None:
 
 
 def main() -> None:
+    """Entry point trang Streamlit — điều hướng giữa form đăng nhập
+    (`_render_login_form`) và màn hình hiển thị phạm vi RBAC
+    (`_render_scope`) dựa trên `st.session_state[_SESSION_KEY]`."""
     st.title("LACCO Dashboard — Demo RBAC (bước 3.1)")
     st.caption(
         "Demo middleware phân quyền: đăng nhập -> hiển thị đúng vai trò + "
