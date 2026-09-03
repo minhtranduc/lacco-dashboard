@@ -47,9 +47,7 @@ class User(Base):
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    username: Mapped[str] = mapped_column(
-        String(100), nullable=False, unique=True
-    )
+    username: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
     # Bcrypt hash thường dài 60 ký tự — 255 để có khoảng đệm an toàn.
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     role: Mapped[UserRole] = mapped_column(
@@ -59,26 +57,17 @@ class User(Base):
     employee_id: Mapped[int | None] = mapped_column(
         ForeignKey("employee.id"), nullable=True, index=True
     )
-    is_active: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=True
-    )
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
-    employee: Mapped["Employee | None"] = relationship(
-        back_populates="user_account"
-    )
-    login_history: Mapped[list["LoginHistory"]] = relationship(
-        back_populates="user"
-    )
+    employee: Mapped["Employee | None"] = relationship(back_populates="user_account")
+    login_history: Mapped[list["LoginHistory"]] = relationship(back_populates="user")
     audit_logs: Mapped[list["AuditLog"]] = relationship(back_populates="user")
     import_history: Mapped[list["ImportHistory"]] = relationship(
         back_populates="imported_by_user"
     )
 
     def __repr__(self) -> str:
-        return (
-            f"<User id={self.id} username={self.username!r} "
-            f"role={self.role}>"
-        )
+        return f"<User id={self.id} username={self.username!r} role={self.role}>"
 
 
 class LoginHistory(Base):
@@ -104,8 +93,7 @@ class LoginHistory(Base):
 
     def __repr__(self) -> str:
         return (
-            f"<LoginHistory id={self.id} user_id={self.user_id} "
-            f"success={self.success}>"
+            f"<LoginHistory id={self.id} user_id={self.user_id} success={self.success}>"
         )
 
 
@@ -165,18 +153,14 @@ class ImportHistory(Base):
     # không giới hạn sớm các loại import trong giai đoạn MVP.
     import_type: Mapped[str] = mapped_column(String(100), nullable=False)
     row_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    error_count: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=0
-    )
+    error_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     imported_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now()
     )
     # Placeholder — xem mục 8, erd-tuan-02.md.
     status: Mapped[str] = mapped_column(String(20), nullable=False)
 
-    imported_by_user: Mapped["User"] = relationship(
-        back_populates="import_history"
-    )
+    imported_by_user: Mapped["User"] = relationship(back_populates="import_history")
 
     def __repr__(self) -> str:
         return (

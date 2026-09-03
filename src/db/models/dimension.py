@@ -19,13 +19,13 @@ from src.db.models.enums import CustomerClassification, StaffGroup
 if TYPE_CHECKING:
     # Chỉ dùng cho type-checking (mypy/IDE) — tránh import vòng lúc runtime.
     from src.db.models.business import (
-        Cost,
         Budget,
+        Cost,
+        CustomerClassificationHistory,
         Debt,
         PriceRequest,
         SalesOrder,
         SupplierEvaluation,
-        CustomerClassificationHistory,
     )
     from src.db.models.security import User
 
@@ -41,9 +41,7 @@ class Division(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
 
-    departments: Mapped[list["Department"]] = relationship(
-        back_populates="division"
-    )
+    departments: Mapped[list["Department"]] = relationship(back_populates="division")
     costs: Mapped[list["Cost"]] = relationship(back_populates="division")
     budgets: Mapped[list["Budget"]] = relationship(back_populates="division")
     debts: Mapped[list["Debt"]] = relationship(back_populates="division")
@@ -66,9 +64,7 @@ class Department(Base):
     )
 
     division: Mapped["Division"] = relationship(back_populates="departments")
-    employees: Mapped[list["Employee"]] = relationship(
-        back_populates="department"
-    )
+    employees: Mapped[list["Employee"]] = relationship(back_populates="department")
     debts: Mapped[list["Debt"]] = relationship(back_populates="department")
 
     def __repr__(self) -> str:
@@ -94,19 +90,13 @@ class Employee(Base):
         Enum(StaffGroup, native_enum=False, length=20), nullable=False
     )
     position: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    is_active: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=True
-    )
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
-    department: Mapped["Department"] = relationship(
-        back_populates="employees"
-    )
+    department: Mapped["Department"] = relationship(back_populates="employees")
     user_account: Mapped["User | None"] = relationship(
         back_populates="employee", uselist=False
     )
-    sales_orders: Mapped[list["SalesOrder"]] = relationship(
-        back_populates="employee"
-    )
+    sales_orders: Mapped[list["SalesOrder"]] = relationship(back_populates="employee")
     price_requests: Mapped[list["PriceRequest"]] = relationship(
         back_populates="employee"
     )
@@ -133,9 +123,7 @@ class Service(Base):
     # Giả định name là định danh nghiệp vụ duy nhất (VD "Cước", "Hải quan").
     name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
 
-    sales_orders: Mapped[list["SalesOrder"]] = relationship(
-        back_populates="service"
-    )
+    sales_orders: Mapped[list["SalesOrder"]] = relationship(back_populates="service")
     price_requests: Mapped[list["PriceRequest"]] = relationship(
         back_populates="service"
     )
@@ -171,9 +159,7 @@ class Customer(Base):
         DateTime, nullable=False, server_default=func.now()
     )
 
-    sales_orders: Mapped[list["SalesOrder"]] = relationship(
-        back_populates="customer"
-    )
+    sales_orders: Mapped[list["SalesOrder"]] = relationship(back_populates="customer")
     price_requests: Mapped[list["PriceRequest"]] = relationship(
         back_populates="customer"
     )

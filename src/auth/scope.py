@@ -158,8 +158,7 @@ def compute_data_scope(user_id: int, *, engine=None) -> DataScope:
             customer_ids=frozenset(),
             unrestricted=False,
             description=(
-                "Không tìm thấy dữ liệu employee/department tương ứng -> "
-                "phạm vi rỗng."
+                "Không tìm thấy dữ liệu employee/department tương ứng -> phạm vi rỗng."
             ),
         )
 
@@ -167,9 +166,7 @@ def compute_data_scope(user_id: int, *, engine=None) -> DataScope:
     division_id = context["division_id"]
 
     if role == UserRole.USER:
-        customer_ids = auth_service.fetch_customer_ids_for_employee(
-            engine, employee_id
-        )
+        customer_ids = auth_service.fetch_customer_ids_for_employee(engine, employee_id)
         classification_hint = CustomerClassification.C
         description = (
             "User (nhân viên kinh doanh) — KH loại C, chỉ xem KH do "

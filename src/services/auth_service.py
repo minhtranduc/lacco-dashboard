@@ -176,7 +176,9 @@ def record_audit_log(
         return entry.id
 
 
-def update_user_password_hash(engine: Engine, user_id: int, new_password_hash: str) -> None:
+def update_user_password_hash(
+    engine: Engine, user_id: int, new_password_hash: str
+) -> None:
     """Cập nhật `users.password_hash` — hash bcrypt phải được tính SẴN ở
     `src/auth/hashing.py` trước khi gọi hàm này (module này chỉ lưu trữ)."""
     with Session(engine) as session:

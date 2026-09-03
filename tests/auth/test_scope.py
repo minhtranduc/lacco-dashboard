@@ -14,7 +14,9 @@ from src.db.models.enums import UserRole
 from src.db.models.security import User
 
 
-def _create_user(engine, *, username: str, role: UserRole, employee_id: int | None) -> int:
+def _create_user(
+    engine, *, username: str, role: UserRole, employee_id: int | None
+) -> int:
     """Tạo 1 user tối thiểu qua ORM — `password_hash` là placeholder vì
     `compute_data_scope()` không kiểm tra mật khẩu."""
     with Session(engine) as session:

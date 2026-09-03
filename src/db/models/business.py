@@ -117,21 +117,15 @@ class PriceRequest(Base):
         ForeignKey("customer.id"), nullable=True, index=True
     )
     request_date: Mapped[date] = mapped_column(Date, nullable=False)
-    is_won: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=False
-    )
+    is_won: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     # Điền khi chốt đơn — quan hệ 1-0..1 với sales_order ("chốt thành").
     sales_order_id: Mapped[int | None] = mapped_column(
         ForeignKey("sales_order.id"), nullable=True, index=True
     )
 
     service: Mapped["Service"] = relationship(back_populates="price_requests")
-    employee: Mapped["Employee"] = relationship(
-        back_populates="price_requests"
-    )
-    customer: Mapped["Customer | None"] = relationship(
-        back_populates="price_requests"
-    )
+    employee: Mapped["Employee"] = relationship(back_populates="price_requests")
+    customer: Mapped["Customer | None"] = relationship(back_populates="price_requests")
     sales_order: Mapped["SalesOrder | None"] = relationship(
         back_populates="price_request"
     )
@@ -170,12 +164,8 @@ class SupplierEvaluation(Base):
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     supplier: Mapped["Supplier"] = relationship(back_populates="evaluations")
-    service: Mapped["Service"] = relationship(
-        back_populates="supplier_evaluations"
-    )
-    employee: Mapped["Employee"] = relationship(
-        back_populates="supplier_evaluations"
-    )
+    service: Mapped["Service"] = relationship(back_populates="supplier_evaluations")
+    employee: Mapped["Employee"] = relationship(back_populates="supplier_evaluations")
 
     def __repr__(self) -> str:
         return (
@@ -330,9 +320,7 @@ class CustomerClassificationHistory(Base):
     )
     snapshot_date: Mapped[date] = mapped_column(Date, nullable=False)
 
-    customer: Mapped["Customer"] = relationship(
-        back_populates="classification_history"
-    )
+    customer: Mapped["Customer"] = relationship(back_populates="classification_history")
 
     def __repr__(self) -> str:
         return (

@@ -85,7 +85,11 @@ def _render_scope(session: dict) -> None:
     st.write(f"**Diễn giải phạm vi:** {scope.description}")
 
     if scope.unrestricted:
-        st.info(f"Không giới hạn — tổng {len(scope.customer_ids)} khách hàng trong hệ thống.")
+        # Chuỗi tiếng Việt dài tự nhiên, không ép xuống dòng để giữ câu
+        # nguyên vẹn — noqa E501.
+        st.info(
+            f"Không giới hạn — tổng {len(scope.customer_ids)} khách hàng trong hệ thống."  # noqa: E501
+        )
     else:
         st.write(f"**Số khách hàng được phép xem:** {len(scope.customer_ids)}")
         if scope.customer_ids:

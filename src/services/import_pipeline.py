@@ -137,8 +137,7 @@ def read_import_file(file_path: Path) -> pd.DataFrame:
         ) from exc
     except pd.errors.ParserError as exc:
         raise ImportPipelineError(
-            f"File '{file_path.name}' bị lỗi định dạng CSV, không đọc "
-            f"được: {exc}"
+            f"File '{file_path.name}' bị lỗi định dạng CSV, không đọc được: {exc}"
         ) from exc
     except OSError as exc:
         # VD file Excel bị hỏng (zipfile.BadZipFile là subclass của OSError
@@ -300,9 +299,7 @@ def prepare_records_for_insert(
     return [{k: _to_native(v) for k, v in rec.items()} for rec in records]
 
 
-def insert_rows(
-    records: list[dict], config: ImportTableConfig, engine: Engine
-) -> None:
+def insert_rows(records: list[dict], config: ImportTableConfig, engine: Engine) -> None:
     """Insert toàn bộ `records` vào bảng đích trong 1 transaction duy nhất.
 
     Dùng `sqlalchemy.insert()` (Core, parameterized) — tuân thủ CLAUDE.md

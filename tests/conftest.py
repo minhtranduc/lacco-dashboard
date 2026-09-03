@@ -24,8 +24,8 @@ from sqlalchemy.pool import StaticPool
 
 from src.db.models import base, business, dimension, security  # noqa: F401
 from src.db.models.base import Base
-from src.db.models.dimension import Customer, Department, Division, Employee, Service
 from src.db.models.business import SalesOrder
+from src.db.models.dimension import Customer, Department, Division, Employee, Service
 from src.db.models.enums import CustomerClassification, StaffGroup
 
 

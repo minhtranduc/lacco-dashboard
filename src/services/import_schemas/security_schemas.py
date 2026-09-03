@@ -33,9 +33,7 @@ users_schema = pa.DataFrameSchema(
         "password_hash": pa.Column(
             str, nullable=False, checks=pa.Check.str_length(min_value=1)
         ),
-        "role": pa.Column(
-            str, nullable=False, checks=pa.Check.isin(_ROLE_VALUES)
-        ),
+        "role": pa.Column(str, nullable=False, checks=pa.Check.isin(_ROLE_VALUES)),
         # Nullable — xem mục 9 "Việc cần xác nhận" erd-tuan-02.md (giả định
         # tài khoản hệ thống không gắn nhân viên nghiệp vụ cụ thể).
         "employee_id": pa.Column(

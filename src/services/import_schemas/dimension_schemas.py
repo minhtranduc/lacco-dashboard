@@ -43,9 +43,7 @@ _CLASSIFICATION_VALUES = [c.value for c in CustomerClassification]
 division_schema = pa.DataFrameSchema(
     {
         "id": pa.Column(int, nullable=False, checks=pa.Check.gt(0)),
-        "name": pa.Column(
-            str, nullable=False, checks=pa.Check.str_length(min_value=1)
-        ),
+        "name": pa.Column(str, nullable=False, checks=pa.Check.str_length(min_value=1)),
     },
     unique=["id"],
     strict=True,
@@ -55,9 +53,7 @@ division_schema = pa.DataFrameSchema(
 department_schema = pa.DataFrameSchema(
     {
         "id": pa.Column(int, nullable=False, checks=pa.Check.gt(0)),
-        "name": pa.Column(
-            str, nullable=False, checks=pa.Check.str_length(min_value=1)
-        ),
+        "name": pa.Column(str, nullable=False, checks=pa.Check.str_length(min_value=1)),
         "division_id": pa.Column(int, nullable=False, checks=pa.Check.gt(0)),
     },
     unique=["id"],
@@ -86,9 +82,7 @@ employee_schema = pa.DataFrameSchema(
 service_schema = pa.DataFrameSchema(
     {
         "id": pa.Column(int, nullable=False, checks=pa.Check.gt(0)),
-        "name": pa.Column(
-            str, nullable=False, checks=pa.Check.str_length(min_value=1)
-        ),
+        "name": pa.Column(str, nullable=False, checks=pa.Check.str_length(min_value=1)),
     },
     unique=["id", "name"],
     strict=True,
@@ -98,12 +92,8 @@ service_schema = pa.DataFrameSchema(
 customer_schema = pa.DataFrameSchema(
     {
         "id": pa.Column(int, nullable=False, checks=pa.Check.gt(0)),
-        "code": pa.Column(
-            str, nullable=False, checks=pa.Check.str_length(min_value=1)
-        ),
-        "name": pa.Column(
-            str, nullable=False, checks=pa.Check.str_length(min_value=1)
-        ),
+        "code": pa.Column(str, nullable=False, checks=pa.Check.str_length(min_value=1)),
+        "name": pa.Column(str, nullable=False, checks=pa.Check.str_length(min_value=1)),
         "source": pa.Column(str, nullable=True, required=False),
         "current_classification": pa.Column(
             str, nullable=False, checks=pa.Check.isin(_CLASSIFICATION_VALUES)
@@ -117,9 +107,7 @@ customer_schema = pa.DataFrameSchema(
 supplier_schema = pa.DataFrameSchema(
     {
         "id": pa.Column(int, nullable=False, checks=pa.Check.gt(0)),
-        "name": pa.Column(
-            str, nullable=False, checks=pa.Check.str_length(min_value=1)
-        ),
+        "name": pa.Column(str, nullable=False, checks=pa.Check.str_length(min_value=1)),
     },
     unique=["id"],
     strict=True,

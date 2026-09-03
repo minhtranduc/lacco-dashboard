@@ -153,9 +153,7 @@ def gen_customer(n: int = 30) -> pd.DataFrame:
 
 
 def gen_supplier(n: int = 15) -> pd.DataFrame:
-    rows = [
-        {"id": i, "name": f"Nhà Cung Cấp Demo {i:02d}"} for i in range(1, n + 1)
-    ]
+    rows = [{"id": i, "name": f"Nhà Cung Cấp Demo {i:02d}"} for i in range(1, n + 1)]
     return pd.DataFrame(rows)
 
 
@@ -206,7 +204,10 @@ def gen_users(employee_df: pd.DataFrame, n: int = 20) -> pd.DataFrame:
 
 
 def gen_sales_order(
-    customer_df: pd.DataFrame, service_df: pd.DataFrame, employee_df: pd.DataFrame, n: int = 40
+    customer_df: pd.DataFrame,
+    service_df: pd.DataFrame,
+    employee_df: pd.DataFrame,
+    n: int = 40,
 ) -> pd.DataFrame:
     # Ghi chú: "status"/"invoice_status" là placeholder tự do (chưa có danh
     # sách enum chính thức từ FT — xem mục 1, 2 "Việc cần xác nhận" trong
@@ -257,13 +258,13 @@ def gen_price_request(
     for i in range(1, n + 1):
         is_won = random.random() < 0.4
         customer_id = (
-            random.choice(customer_df["id"].tolist())
-            if random.random() < 0.7
-            else None
+            random.choice(customer_df["id"].tolist()) if random.random() < 0.7 else None
         )
         sales_order_id = None
         if is_won and len(used_sales_order_ids) < len(sales_order_ids):
-            candidates = [sid for sid in sales_order_ids if sid not in used_sales_order_ids]
+            candidates = [
+                sid for sid in sales_order_ids if sid not in used_sales_order_ids
+            ]
             if candidates:
                 sales_order_id = random.choice(candidates)
                 used_sales_order_ids.add(sales_order_id)
@@ -282,7 +283,10 @@ def gen_price_request(
 
 
 def gen_supplier_evaluation(
-    supplier_df: pd.DataFrame, service_df: pd.DataFrame, employee_df: pd.DataFrame, n: int = 25
+    supplier_df: pd.DataFrame,
+    service_df: pd.DataFrame,
+    employee_df: pd.DataFrame,
+    n: int = 25,
 ) -> pd.DataFrame:
     # GIẢ ĐỊNH thang điểm 0-100 — xem docs/architecture/erd-tuan-02.md mục
     # 10 (cập nhật 22/08/2026, data-import-agent bước 2.4).
@@ -372,11 +376,13 @@ def gen_debt(
         # nhất quán 2 cột division_id/department_id (xem mục 5 "Việc cần
         # xác nhận" erd-tuan-02.md: model cho phép 2 cột lệch nhau, nhưng
         # dữ liệu mẫu không cố tình tạo lệch để tránh gây hiểu nhầm là bug).
-        dept_candidates = department_df[
-            department_df["division_id"] == division_id
-        ]["id"].tolist()
+        dept_candidates = department_df[department_df["division_id"] == division_id][
+            "id"
+        ].tolist()
         department_id = random.choice(dept_candidates)
-        invoice_date = _random_date(TODAY - timedelta(days=365), TODAY - timedelta(days=1))
+        invoice_date = _random_date(
+            TODAY - timedelta(days=365), TODAY - timedelta(days=1)
+        )
         # Trải đều 4 mức tuổi nợ 0-30/31-60/61-90/>90 ngày để dữ liệu mẫu
         # phủ đủ các ngưỡng báo cáo Công nợ.
         bucket = random.choice([15, 45, 75, 120])
@@ -437,7 +443,7 @@ def gen_login_history(users_df: pd.DataFrame, n: int = 30) -> pd.DataFrame:
             {
                 "id": i,
                 "user_id": random.choice(users_df["id"].tolist()),
-                "ip_address": f"10.0.{random.randint(0,255)}.{random.randint(1,254)}",
+                "ip_address": f"10.0.{random.randint(0, 255)}.{random.randint(1, 254)}",
                 "success": random.random() < 0.9,
             }
         )
@@ -479,7 +485,9 @@ def main() -> None:
     price_request_df = gen_price_request(
         service_df, employee_df, customer_df, sales_order_df
     )
-    supplier_evaluation_df = gen_supplier_evaluation(supplier_df, service_df, employee_df)
+    supplier_evaluation_df = gen_supplier_evaluation(
+        supplier_df, service_df, employee_df
+    )
     cost_df = gen_cost(division_df)
     budget_df = gen_budget(division_df)
     personnel_cost_df = gen_personnel_cost()

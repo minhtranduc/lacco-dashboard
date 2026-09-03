@@ -69,9 +69,7 @@ def test_wrong_password_fails_and_logs_failure(db_engine):
 def test_unknown_username_fails_without_login_history(db_engine):
     _seed_user(db_engine)
 
-    result = authenticate_and_log(
-        "khong-ton-tai", "mat-khau-bat-ky", engine=db_engine
-    )
+    result = authenticate_and_log("khong-ton-tai", "mat-khau-bat-ky", engine=db_engine)
 
     assert result.success is False
     assert result.reason == "username_not_found"

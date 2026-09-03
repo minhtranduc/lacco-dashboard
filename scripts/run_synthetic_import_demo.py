@@ -165,9 +165,7 @@ def print_recent_import_history(engine, limit: int = 10) -> None:
     print(f"\n=== {limit} dòng gần nhất trong import_history ===")
     with engine.connect() as conn:
         rows = conn.execute(
-            select(ImportHistory)
-            .order_by(ImportHistory.id.desc())
-            .limit(limit)
+            select(ImportHistory).order_by(ImportHistory.id.desc()).limit(limit)
         ).all()
     for row in reversed(rows):
         print(
@@ -202,7 +200,9 @@ def main() -> None:
     missing_col_file, fk_file = make_error_demo_files()
 
     print("\n--- Demo 1: thieu gia tri cot bat buoc (Pandera not-null) ---")
-    result_1 = run_import(missing_col_file, "department", bootstrap_user_id, engine=engine)
+    result_1 = run_import(
+        missing_col_file, "department", bootstrap_user_id, engine=engine
+    )
     print(f"file: {result_1.file_name}")
     print(f"status: {result_1.status}")
     print(f"row_count: {result_1.row_count}  error_count: {result_1.error_count}")
