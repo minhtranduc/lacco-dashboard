@@ -1,7 +1,7 @@
 # CLAUDE.md — lacco-dashboard
 
 > File context gốc repo, giúp Claude Code hiểu dự án ngay từ đầu mỗi phiên, không cần giải thích lại từ đầu.
-> **Phiên bản:** v4 — 25/08/2026 | **Nguồn:** Tài liệu Kiến trúc Hệ thống, Kế hoạch triển khai Dashboard LACCO, Sheet 1 "Mẫu thu thập yêu cầu" (Bieu_mau_Yeu_cau_va_RACI_LACCO.xlsx — 12/14 dòng "Đã rõ", 2/14 chốt chuyển sang Giai đoạn 2). Bảng trạng thái yêu cầu chi tiết: xem `.claude/rules/trang-thai-yeu-cau.md`.
+> **Phiên bản:** v5 — 03/09/2026 | **Nguồn:** Tài liệu Kiến trúc Hệ thống, Kế hoạch triển khai Dashboard LACCO, Sheet 1 "Mẫu thu thập yêu cầu" (Bieu_mau_Yeu_cau_va_RACI_LACCO.xlsx — 12/14 dòng "Đã rõ", 2/14 chốt chuyển sang Giai đoạn 2). Bảng trạng thái yêu cầu chi tiết: xem `.claude/rules/trang-thai-yeu-cau.md`.
 > Phỏng vấn thu thập yêu cầu (bước 1.3) đã hoàn thành 17/08/2026. Chỉ còn 2 báo cáo ngoài phạm vi Giai đoạn 1: **CRM** (chưa có dữ liệu trên hệ thống) và **Dòng tiền** (nguồn AMIS chưa xác nhận) — cả hai đã chốt dời sang Giai đoạn 2, không dựng logic/schema cho 2 phần này ở Giai đoạn 1.
 
 ## 1. Bối cảnh dự án
@@ -72,14 +72,14 @@ Nguyên tắc bắt buộc: **không trộn lẫn 3 lớp** — code truy vấn 
 
 ## 5. Lệnh thường dùng
 
-*(Migration và import đã chạy thật từ Tuần 2 — xem HD-09, HD-10. Lệnh app đã có code thật từ bước 3.1 (Auth & RBAC) — xem HD-11. Lệnh test vẫn là placeholder, chờ bước 3.3.)*
+*(Migration và import đã chạy thật từ Tuần 2 — xem HD-09, HD-10. Lệnh app đã có code thật từ bước 3.1 (Auth & RBAC) — xem HD-11. Lệnh test đã có test thật cho `src/auth/` từ bước 3.3 — xem HD-13.)*
 
 ```bash
 # Chạy app local (có code thật từ bước 3.1 — trang demo đăng nhập + hiển thị phạm vi RBAC, xem HD-11)
 streamlit run src/app/main.py
 
-# Chạy test (chưa có test thật — placeholder, chờ bước 3.3)
-pytest --cov=src
+# Chạy test (13 test cho src/auth/, chạy trên SQLite in-memory — không đụng MySQL "lacco" thật, xem HD-13)
+pytest tests/ -v --cov=src/auth --cov-report=term-missing
 
 # Migration (đã chạy thật lên MySQL "lacco", bước 2.3)
 alembic upgrade head
@@ -128,3 +128,4 @@ Nếu nội dung sắp bị tóm tắt liên quan đến quyết định RBAC, b
 - **v2 (17/08/2026):** Cập nhật sau khi hoàn thành bước 1.3 (phỏng vấn thu thập yêu cầu). Kết quả: 12/14 dòng yêu cầu "Đã rõ" (tăng từ 5/14), gồm cả tiêu chí xếp loại KH A/B/C (mục 6 — dùng trường "Phân loại" có sẵn trong FT, đã có thể code RBAC A/B/C) và nguồn khách hàng. Chỉ còn 2/14 "Cần làm rõ" — **CRM** và **Dòng tiền** — cả hai đã chốt dời sang Giai đoạn 2 (ngoài phạm vi, không phải chờ trả lời thêm). Bảng chi tiết đã đồng bộ tại `.claude/rules/trang-thai-yeu-cau.md`.
 - **v3 (22/08/2026):** Cập nhật sau khi hoàn thành Tuần 2 (schema, migration, import — 5/5 bước). ERD 18 bảng đã thiết kế và gần chốt xong (8/10 mục "cần xác nhận" còn mở, không mục nào chặn tiến độ — chi tiết `docs/architecture/erd-tuan-02.md`), SQLAlchemy models + Alembic migration đã chạy thật lên MySQL "lacco", pipeline import Pandera đã test cả đường thành công lẫn đường lỗi cố ý. 3 thay đổi trong bản này: (1) sửa mục 1 — còn 5/6 nhóm báo cáo trong phạm vi Giai đoạn 1 (Dòng tiền dời Giai đoạn 2), bản v1/v2 liệt kê nhầm 6 nhóm mâu thuẫn với ghi chú đầu file; (2) thêm lưu ý vận hành ở mục 2 về giới hạn không gọi được subagent tuỳ biến theo tên qua Task tool trong harness hiện tại (xem HD-07); (3) cập nhật mục 5 với các lệnh migration/sinh dữ liệu/import thật đã dùng ở Tuần 2, thay placeholder cũ.
 - **v4 (25/08/2026):** Cập nhật sau bước 3.1 (Auth & RBAC) và 3.2 (qa-reviewer-agent). 2 thay đổi: (1) mục 5 — lệnh `streamlit run src/app/main.py` không còn là placeholder, đã có code thật (đăng nhập bcrypt + hiển thị phạm vi RBAC) từ bước 3.1; lệnh `pytest` vẫn placeholder, chờ bước 3.3; (2) mục 6 — ghi rõ quyết định "Admin luôn xem toàn bộ dữ liệu, không giới hạn theo Khối/Phòng" đã chốt tại bước 3.1, tránh lặp lại tình huống agent phải tự đoán như lúc `auth-rbac-agent` mới code lần đầu.
+- **v5 (03/09/2026):** Cập nhật sau bước 3.3 (test đầu tiên, HD-13). Mục 5 — lệnh `pytest` không còn placeholder: 13 test cho `src/auth/` (hashing, scope, authentication), coverage 78% toàn `src/auth/` (96% `scope.py`, 100% `hashing.py`, 76% `authentication.py` — phần thiếu là các hàm widget `streamlit_authenticator` không dùng trong luồng đăng nhập chính). Toàn bộ test chạy trên SQLite in-memory qua tham số `engine=` đã thiết kế sẵn từ bước 3.1, không kết nối MySQL "lacco" thật — chuẩn bị sẵn cho GitHub Actions CI ở bước 3.4.
