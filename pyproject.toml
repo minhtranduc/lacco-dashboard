@@ -5,3 +5,9 @@ extend-exclude = ["migrations/versions"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "W"]
+
+[tool.pytest.ini_options]
+# Bat buoc de "import src...." hoat dong khi chay lenh `pytest` truc tiep
+# (khong qua `python -m pytest`) - vd. tren GitHub Actions CI, noi thu muc
+# goc du an khong tu dong duoc them vao sys.path.
+pythonpath = ["."]
