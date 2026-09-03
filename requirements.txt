@@ -1,9 +1,15 @@
 alembic==1.19.1
 bcrypt==4.3.0
+coverage==7.16.0
+iniconfig==2.3.0
 loguru==0.7.3
 mysql-connector-python==9.3.0
 pandas==2.3.0
 pandera==0.32.1
+pluggy==1.6.0
+Pygments==2.21.0
+pytest==9.1.1
+pytest-cov==7.1.0
 python-dotenv==1.1.0
 SQLAlchemy==2.0.41
 streamlit==1.46.1
