@@ -1,7 +1,7 @@
 # CLAUDE.md — lacco-dashboard
 
 > File context gốc repo, giúp Claude Code hiểu dự án ngay từ đầu mỗi phiên, không cần giải thích lại từ đầu.
-> **Phiên bản:** v5 — 03/09/2026 | **Nguồn:** Tài liệu Kiến trúc Hệ thống, Kế hoạch triển khai Dashboard LACCO, Sheet 1 "Mẫu thu thập yêu cầu" (Bieu_mau_Yeu_cau_va_RACI_LACCO.xlsx — 12/14 dòng "Đã rõ", 2/14 chốt chuyển sang Giai đoạn 2). Bảng trạng thái yêu cầu chi tiết: xem `.claude/rules/trang-thai-yeu-cau.md`.
+> **Phiên bản:** v6 — 03/09/2026 | **Nguồn:** Tài liệu Kiến trúc Hệ thống, Kế hoạch triển khai Dashboard LACCO, Sheet 1 "Mẫu thu thập yêu cầu" (Bieu_mau_Yeu_cau_va_RACI_LACCO.xlsx — 12/14 dòng "Đã rõ", 2/14 chốt chuyển sang Giai đoạn 2). Bảng trạng thái yêu cầu chi tiết: xem `.claude/rules/trang-thai-yeu-cau.md`.
 > Phỏng vấn thu thập yêu cầu (bước 1.3) đã hoàn thành 17/08/2026. Chỉ còn 2 báo cáo ngoài phạm vi Giai đoạn 1: **CRM** (chưa có dữ liệu trên hệ thống) và **Dòng tiền** (nguồn AMIS chưa xác nhận) — cả hai đã chốt dời sang Giai đoạn 2, không dựng logic/schema cho 2 phần này ở Giai đoạn 1.
 
 ## 1. Bối cảnh dự án
@@ -30,8 +30,9 @@ lacco-dashboard/
 │   ├── db/                  # Data layer — SQLAlchemy models, migrations (Alembic)
 │   └── auth/                # RBAC, bcrypt, session
 ├── data/sample/              # dữ liệu mẫu ĐÃ ẨN DANH — không đưa dữ liệu thật vào đây
-├── tests/
+├── tests/                    # pytest, chạy trên SQLite in-memory (từ Tuần 3, HD-13)
 ├── .claude/agents/           # định nghĩa subagent chuyên biệt
+├── .github/workflows/        # CI (lint + test tự động khi push/PR, từ Tuần 3, HD-14)
 └── scripts/
 ```
 
@@ -52,6 +53,7 @@ Nguyên tắc bắt buộc: **không trộn lẫn 3 lớp** — code truy vấn 
 | Migration DB | Alembic | Tuần 2 |
 | Validate dữ liệu import | Pandera | Tuần 2 |
 | Testing | pytest + pytest-cov | Tuần 3 |
+| Lint/Format | Ruff | Tuần 3 (bước 3.4) |
 | CI/CD | GitHub Actions | Tuần 3–4 |
 | Khung đăng nhập | streamlit-authenticator | Tuần 3 |
 | Logging | Loguru | Ngay khi cần log |
@@ -69,10 +71,11 @@ Nguyên tắc bắt buộc: **không trộn lẫn 3 lớp** — code truy vấn 
 - Dùng Loguru để log, không dùng `print()` cho việc theo dõi lỗi/luồng chạy.
 - Xử lý lỗi bằng `except` cụ thể theo loại lỗi, không dùng bare `except:`; lỗi nghiệp vụ phải vừa log vừa hiển thị thông báo rõ ràng cho người dùng (không nuốt lỗi âm thầm).
 - **Mọi truy vấn SQL bắt buộc qua SQLAlchemy (parameterized query)** — cấm nối chuỗi SQL thủ công dưới mọi hình thức, kể cả khi "chỉ để test nhanh".
+- **PEP8/import-order được kiểm tra tự động bằng Ruff** (từ bước 3.4, `pyproject.toml`) — chạy `ruff check` + `ruff format --check` cục bộ trước khi commit, tránh để CI (mục 5) phát hiện thay. Không tắt/nới lỏng rule đã bật trong `pyproject.toml` mà không ghi lý do vào đây.
 
 ## 5. Lệnh thường dùng
 
-*(Migration và import đã chạy thật từ Tuần 2 — xem HD-09, HD-10. Lệnh app đã có code thật từ bước 3.1 (Auth & RBAC) — xem HD-11. Lệnh test đã có test thật cho `src/auth/` từ bước 3.3 — xem HD-13.)*
+*(Migration và import đã chạy thật từ Tuần 2 — xem HD-09, HD-10. Lệnh app đã có code thật từ bước 3.1 (Auth & RBAC) — xem HD-11. Lệnh test đã có test thật cho `src/auth/` từ bước 3.3 — xem HD-13. Lệnh lint/format thêm từ bước 3.4 — xem HD-14.)*
 
 ```bash
 # Chạy app local (có code thật từ bước 3.1 — trang demo đăng nhập + hiển thị phạm vi RBAC, xem HD-11)
@@ -80,6 +83,10 @@ streamlit run src/app/main.py
 
 # Chạy test (13 test cho src/auth/, chạy trên SQLite in-memory — không đụng MySQL "lacco" thật, xem HD-13)
 pytest tests/ -v --cov=src/auth --cov-report=term-missing
+
+# Lint + format (chạy trước khi commit — CI ở .github/workflows/ci.yml sẽ chạy lại "ruff check", xem HD-14)
+ruff check src/ tests/ scripts/
+ruff format src/ tests/ scripts/
 
 # Migration (đã chạy thật lên MySQL "lacco", bước 2.3)
 alembic upgrade head
@@ -129,3 +136,4 @@ Nếu nội dung sắp bị tóm tắt liên quan đến quyết định RBAC, b
 - **v3 (22/08/2026):** Cập nhật sau khi hoàn thành Tuần 2 (schema, migration, import — 5/5 bước). ERD 18 bảng đã thiết kế và gần chốt xong (8/10 mục "cần xác nhận" còn mở, không mục nào chặn tiến độ — chi tiết `docs/architecture/erd-tuan-02.md`), SQLAlchemy models + Alembic migration đã chạy thật lên MySQL "lacco", pipeline import Pandera đã test cả đường thành công lẫn đường lỗi cố ý. 3 thay đổi trong bản này: (1) sửa mục 1 — còn 5/6 nhóm báo cáo trong phạm vi Giai đoạn 1 (Dòng tiền dời Giai đoạn 2), bản v1/v2 liệt kê nhầm 6 nhóm mâu thuẫn với ghi chú đầu file; (2) thêm lưu ý vận hành ở mục 2 về giới hạn không gọi được subagent tuỳ biến theo tên qua Task tool trong harness hiện tại (xem HD-07); (3) cập nhật mục 5 với các lệnh migration/sinh dữ liệu/import thật đã dùng ở Tuần 2, thay placeholder cũ.
 - **v4 (25/08/2026):** Cập nhật sau bước 3.1 (Auth & RBAC) và 3.2 (qa-reviewer-agent). 2 thay đổi: (1) mục 5 — lệnh `streamlit run src/app/main.py` không còn là placeholder, đã có code thật (đăng nhập bcrypt + hiển thị phạm vi RBAC) từ bước 3.1; lệnh `pytest` vẫn placeholder, chờ bước 3.3; (2) mục 6 — ghi rõ quyết định "Admin luôn xem toàn bộ dữ liệu, không giới hạn theo Khối/Phòng" đã chốt tại bước 3.1, tránh lặp lại tình huống agent phải tự đoán như lúc `auth-rbac-agent` mới code lần đầu.
 - **v5 (03/09/2026):** Cập nhật sau bước 3.3 (test đầu tiên, HD-13). Mục 5 — lệnh `pytest` không còn placeholder: 13 test cho `src/auth/` (hashing, scope, authentication), coverage 78% toàn `src/auth/` (96% `scope.py`, 100% `hashing.py`, 76% `authentication.py` — phần thiếu là các hàm widget `streamlit_authenticator` không dùng trong luồng đăng nhập chính). Toàn bộ test chạy trên SQLite in-memory qua tham số `engine=` đã thiết kế sẵn từ bước 3.1, không kết nối MySQL "lacco" thật — chuẩn bị sẵn cho GitHub Actions CI ở bước 3.4.
+- **v6 (03/09/2026, chốt Tuần 3):** Phát hiện khi chạy quy trình "chốt tuần" mới (`lacco-week-closeout`) — bước 3.4 (Ruff + CI) đã hoàn thành và commit code thật từ trước, nhưng CLAUDE.md chưa được cập nhật để phản ánh việc này (thiếu sót do bước 3.4 không tự động kèm sửa CLAUDE.md). 4 thay đổi: (1) mục 2 — thêm `.github/workflows/` vào cây thư mục; (2) mục 3 — thêm dòng "Lint/Format | Ruff | Tuần 3 (bước 3.4)" vào bảng tech stack bổ sung; (3) mục 4 — thêm nguyên tắc PEP8/import-order được Ruff kiểm tra tự động, chạy trước khi commit; (4) mục 5 — thêm lệnh `ruff check`/`ruff format`. Bài học: khi thêm 1 công cụ/tầng hạ tầng mới (không phải code nghiệp vụ), vẫn cần tự hỏi "CLAUDE.md có cần cập nhật không" ngay trong lúc làm, không chỉ chờ đến lúc chốt tuần mới phát hiện.
