@@ -1,7 +1,7 @@
 # CLAUDE.md — lacco-dashboard
 
 > File context gốc repo, giúp Claude Code hiểu dự án ngay từ đầu mỗi phiên, không cần giải thích lại từ đầu.
-> **Phiên bản:** v6 — 03/09/2026 | **Nguồn:** Tài liệu Kiến trúc Hệ thống, Kế hoạch triển khai Dashboard LACCO, Sheet 1 "Mẫu thu thập yêu cầu" (Bieu_mau_Yeu_cau_va_RACI_LACCO.xlsx — 12/14 dòng "Đã rõ", 2/14 chốt chuyển sang Giai đoạn 2). Bảng trạng thái yêu cầu chi tiết: xem `.claude/rules/trang-thai-yeu-cau.md`.
+> **Phiên bản:** v7 — 07/09/2026 | **Nguồn:** Tài liệu Kiến trúc Hệ thống, Kế hoạch triển khai Dashboard LACCO, Sheet 1 "Mẫu thu thập yêu cầu" (Bieu_mau_Yeu_cau_va_RACI_LACCO.xlsx — 12/14 dòng "Đã rõ", 2/14 chốt chuyển sang Giai đoạn 2). Bảng trạng thái yêu cầu chi tiết: xem `.claude/rules/trang-thai-yeu-cau.md`.
 > Phỏng vấn thu thập yêu cầu (bước 1.3) đã hoàn thành 17/08/2026. Chỉ còn 2 báo cáo ngoài phạm vi Giai đoạn 1: **CRM** (chưa có dữ liệu trên hệ thống) và **Dòng tiền** (nguồn AMIS chưa xác nhận) — cả hai đã chốt dời sang Giai đoạn 2, không dựng logic/schema cho 2 phần này ở Giai đoạn 1.
 
 ## 1. Bối cảnh dự án
@@ -26,6 +26,8 @@ lacco-dashboard/
 │   └── teaching-notes/      # nhật ký học tập — KHÔNG chứa logic dự án, không phụ thuộc vào
 ├── src/
 │   ├── app/                 # Presentation layer — Streamlit pages
+│   │   └── pages/           # Trang multi-page native của Streamlit (từ Tuần 4, bước 4.1) —
+│   │                        # mỗi module báo cáo 1 file, đặt tên "<N>_<Ten_trang>.py"
 │   ├── services/            # Business Logic layer — tính KPI, xử lý nghiệp vụ
 │   ├── db/                  # Data layer — SQLAlchemy models, migrations (Alembic)
 │   └── auth/                # RBAC, bcrypt, session
@@ -41,6 +43,8 @@ Luồng dữ liệu: `Excel/CSV → Import → MySQL → SQLAlchemy → Pandas �
 Nguyên tắc bắt buộc: **không trộn lẫn 3 lớp** — code truy vấn DB không được nằm trong `src/app/`, logic tính KPI không được nằm trong `src/db/`. Việc này để đổi giao diện không ảnh hưởng logic nghiệp vụ, và ngược lại.
 
 **Lưu ý vận hành khi giao việc cho subagent (`.claude/agents/*.md`):** harness Claude Code hiện tại KHÔNG hỗ trợ gọi subagent tuỳ biến trực tiếp theo tên qua Task tool — đã xác nhận chắc chắn ở bước 2.2 (kể cả phiên CLI hoàn toàn mới), xem `docs/teaching-notes/huong-dan/HD-07-giao-nhiem-vu-subagent.md`. Quy ước chính thức: luôn giao việc qua agent loại "general-purpose", dán nguyên văn toàn bộ nội dung persona từ file `.claude/agents/*.md` liên quan vào đầu prompt — không cần thử gọi theo tên trước.
+
+**Chạy nhiều instance cùng 1 persona song song (từ Tuần 4, bước 4.1, xem HD-15):** khi giao việc cho >1 instance cùng persona (ví dụ nhiều `report-builder-agent` xây nhiều module báo cáo cùng lúc), BẮT BUỘC chỉ định rõ trong prompt đúng phạm vi file mỗi instance được tạo/sửa (thường 2 file/instance: 1 service + 1 trang) — không để instance tự suy luận ranh giới. Đã kiểm chứng thật: 0 xung đột file khi ranh giới tường minh.
 
 ## 3. Tech stack
 
@@ -115,6 +119,10 @@ Nguyên tắc: chỉ code phần logic khi trạng thái là **Đã rõ**; phầ
 
 Chi tiết đầy đủ (bảng 14 dòng, trạng thái Đã rõ/Cần làm rõ, ghi chú công thức) đã tách sang `.claude/rules/trang-thai-yeu-cau.md` — **tự động nạp khi làm việc trong `src/services/`, `src/db/`, hoặc `docs/requirements/`**, không tải khi làm việc ở chỗ khác (auth, deploy, UI...) để tiết kiệm ngữ cảnh. Sau đợt phỏng vấn 17/08/2026: 12/14 dòng "Đã rõ" — chỉ còn **CRM** và **Dòng tiền** ở trạng thái "Cần làm rõ", cả hai đã chốt dời sang Giai đoạn 2 (không phải "chưa phỏng vấn" mà là "ngoài phạm vi Giai đoạn 1") — không code logic, không cần dựng cả UI/schema cho 2 phần này ở Giai đoạn 1.
 
+**2 quyết định công thức đã chốt tại bước 4.1/4.3 (Tuần 4), áp dụng cho MỌI module tính doanh thu/lãi lỗ/xu hướng theo thời gian, không chỉ báo cáo Kinh doanh:**
+- **Đơn `sales_order.status = "Huỷ"` LOẠI TRỪ khỏi mọi tổng doanh thu/lãi lỗ** (COO xác nhận 07/09/2026) — vẫn có thể hiển thị riêng số lượng/giá trị đơn Huỷ để theo dõi tỷ lệ huỷ đơn, nhưng không cộng vào tổng chính. Các giá trị `status` khác (Mới tạo/Đang xử lý/Đang vận chuyển/Đã giao) vẫn CHƯA được Trưởng phòng Vận hành xác nhận đầy đủ (xem `docs/architecture/erd-tuan-02.md` mục 1) — không tự suy diễn cách xử lý cho các giá trị này, tiếp tục hỏi nếu phát sinh.
+- **Nhóm theo Tuần trong biểu đồ xu hướng dùng ISO week** (MySQL `%x-%v`, tuần bắt đầu Thứ Hai) — COO xác nhận 07/09/2026 không cần đổi theo quy ước AMIS/FT riêng.
+
 ## 8. Hướng dẫn khi Compact
 
 Khi chạy `/compact` (kể cả không kèm chỉ dẫn thủ công), luôn ưu tiên giữ lại:
@@ -137,3 +145,4 @@ Nếu nội dung sắp bị tóm tắt liên quan đến quyết định RBAC, b
 - **v4 (25/08/2026):** Cập nhật sau bước 3.1 (Auth & RBAC) và 3.2 (qa-reviewer-agent). 2 thay đổi: (1) mục 5 — lệnh `streamlit run src/app/main.py` không còn là placeholder, đã có code thật (đăng nhập bcrypt + hiển thị phạm vi RBAC) từ bước 3.1; lệnh `pytest` vẫn placeholder, chờ bước 3.3; (2) mục 6 — ghi rõ quyết định "Admin luôn xem toàn bộ dữ liệu, không giới hạn theo Khối/Phòng" đã chốt tại bước 3.1, tránh lặp lại tình huống agent phải tự đoán như lúc `auth-rbac-agent` mới code lần đầu.
 - **v5 (03/09/2026):** Cập nhật sau bước 3.3 (test đầu tiên, HD-13). Mục 5 — lệnh `pytest` không còn placeholder: 13 test cho `src/auth/` (hashing, scope, authentication), coverage 78% toàn `src/auth/` (96% `scope.py`, 100% `hashing.py`, 76% `authentication.py` — phần thiếu là các hàm widget `streamlit_authenticator` không dùng trong luồng đăng nhập chính). Toàn bộ test chạy trên SQLite in-memory qua tham số `engine=` đã thiết kế sẵn từ bước 3.1, không kết nối MySQL "lacco" thật — chuẩn bị sẵn cho GitHub Actions CI ở bước 3.4.
 - **v6 (03/09/2026, chốt Tuần 3):** Phát hiện khi chạy quy trình "chốt tuần" mới (`lacco-week-closeout`) — bước 3.4 (Ruff + CI) đã hoàn thành và commit code thật từ trước, nhưng CLAUDE.md chưa được cập nhật để phản ánh việc này (thiếu sót do bước 3.4 không tự động kèm sửa CLAUDE.md). 4 thay đổi: (1) mục 2 — thêm `.github/workflows/` vào cây thư mục; (2) mục 3 — thêm dòng "Lint/Format | Ruff | Tuần 3 (bước 3.4)" vào bảng tech stack bổ sung; (3) mục 4 — thêm nguyên tắc PEP8/import-order được Ruff kiểm tra tự động, chạy trước khi commit; (4) mục 5 — thêm lệnh `ruff check`/`ruff format`. Bài học: khi thêm 1 công cụ/tầng hạ tầng mới (không phải code nghiệp vụ), vẫn cần tự hỏi "CLAUDE.md có cần cập nhật không" ngay trong lúc làm, không chỉ chờ đến lúc chốt tuần mới phát hiện.
+- **v7 (07/09/2026, chốt Tuần 4):** Phát hiện khi chạy `lacco-week-closeout` cho Tuần 4 — 2 quyết định nghiệp vụ đã chốt với COO ở bước 4.1/4.3 (loại trừ đơn Huỷ, giữ ISO week) chưa được ghi vào CLAUDE.md, chỉ nằm trong nhật ký/commit message — rủi ro agent Tuần 5 (xây Đơn hàng/Pricing/Chi phí/Công nợ, có thể cũng tính tổng liên quan `sales_order`) phải tự suy luận lại hoặc hỏi lại COO câu đã trả lời. 4 thay đổi: (1) mục 2 — thêm `src/app/pages/` vào cây thư mục, thêm quy tắc bắt buộc chỉ định ranh giới file khi chạy nhiều instance cùng persona song song (HD-15); (2) mục 7 — thêm 2 quyết định công thức đã chốt (loại trừ Huỷ khỏi doanh thu/lãi lỗ toàn dự án, ISO week cho nhóm theo tuần), áp dụng mọi module tính doanh thu/lãi lỗ chứ không chỉ Kinh doanh; (3) đồng bộ `.claude/rules/trang-thai-yeu-cau.md` (dòng "Kinh doanh") và `.claude/agents/report-builder-agent.md` (mục "không tự loại trừ dữ liệu") qua CLI — 2 file này bị chặn ghi qua device bridge. Bài học: quyết định nghiệp vụ chốt qua `AskUserQuestion` trong lúc code cần được ghi ngay vào CLAUDE.md/persona, không đợi đến lúc chốt tuần mới rà soát — nếu không, chính agent đã tạo ra quyết định đó ở tuần này cũng không "nhớ" được cho tuần sau.
