@@ -49,6 +49,36 @@ def _random_date(start: date, end: date) -> date:
     return start + timedelta(days=random.randint(0, max(delta_days, 0)))
 
 
+def _resolve_employee_id(
+    customer_id: int | None,
+    txn_date: date,
+    employee_df: pd.DataFrame,
+    customer_primary_employee: dict[int, int],
+    customer_handover: dict[int, dict],
+) -> int:
+    """Trả về employee_id phụ trách 1 giao dịch tại `txn_date`.
+
+    `customer_id=None` (báo giá cho KH tiềm năng, chưa có trong bảng
+    `customer`) -> không có NV phụ trách chính để tra, random tự do như
+    trước. Ngược lại: dùng NV phụ trách chính cố định
+    (`customer_primary_employee`), trừ khi KH đó có "employee thứ 2"
+    (`customer_handover`) VÀ `txn_date` đã từ `handover_date` trở đi -> khi
+    đó dùng NV thứ 2.
+
+    Đây là cơ chế thay thế cách random 80/20 MỖI GIAO DỊCH ở lần sửa trước
+    — cách đó gây tích luỹ xác suất theo số giao dịch/KH (`1 - 0.8^k`),
+    khiến overlap thực đo lên tới ~57% dù chỉ đặt 20%/giao dịch. Cơ chế mới
+    chỉ random 1 LẦN mỗi KH (xác suất 15% có employee thứ 2, xem `main()`),
+    không tích luỹ theo số giao dịch.
+    """
+    if customer_id is None:
+        return random.choice(employee_df["id"].tolist())
+    handover = customer_handover.get(customer_id)
+    if handover is not None and txn_date >= handover["handover_date"]:
+        return handover["secondary_employee"]
+    return customer_primary_employee[customer_id]
+
+
 def _write(df: pd.DataFrame, name: str, *, as_excel: bool = False) -> Path:
     SAMPLE_DIR.mkdir(parents=True, exist_ok=True)
     if as_excel:
@@ -207,6 +237,8 @@ def gen_sales_order(
     customer_df: pd.DataFrame,
     service_df: pd.DataFrame,
     employee_df: pd.DataFrame,
+    customer_primary_employee: dict[int, int],
+    customer_handover: dict[int, dict],
     n: int = 40,
 ) -> pd.DataFrame:
     # Ghi chú: "status"/"invoice_status" là placeholder tự do (chưa có danh
@@ -218,7 +250,17 @@ def gen_sales_order(
     rows = []
     start = TODAY - timedelta(days=365)
     for i in range(1, n + 1):
+        customer_id = random.choice(customer_df["id"].tolist())
         order_date = _random_date(start, TODAY)
+        # NV phụ trách chính cố định của KH, hoặc NV thứ 2 nếu order_date đã
+        # qua handover_date (xem docstring _resolve_employee_id).
+        employee_id = _resolve_employee_id(
+            customer_id,
+            order_date,
+            employee_df,
+            customer_primary_employee,
+            customer_handover,
+        )
         revenue = round(random.uniform(20_000_000, 500_000_000), 2)
         order_cost = round(revenue * random.uniform(0.6, 0.9), 2)
         invoice_status = random.choice(invoice_statuses)
@@ -230,9 +272,9 @@ def gen_sales_order(
         rows.append(
             {
                 "id": i,
-                "customer_id": random.choice(customer_df["id"].tolist()),
+                "customer_id": customer_id,
                 "service_id": random.choice(service_df["id"].tolist()),
-                "employee_id": random.choice(employee_df["id"].tolist()),
+                "employee_id": employee_id,
                 "order_date": order_date,
                 "status": random.choice(statuses),
                 "revenue": revenue,
@@ -249,6 +291,8 @@ def gen_price_request(
     employee_df: pd.DataFrame,
     customer_df: pd.DataFrame,
     sales_order_df: pd.DataFrame,
+    customer_primary_employee: dict[int, int],
+    customer_handover: dict[int, dict],
     n: int = 35,
 ) -> pd.DataFrame:
     sales_order_ids = sales_order_df["id"].tolist()
@@ -259,6 +303,17 @@ def gen_price_request(
         is_won = random.random() < 0.4
         customer_id = (
             random.choice(customer_df["id"].tolist()) if random.random() < 0.7 else None
+        )
+        request_date = _random_date(start, TODAY)
+        # customer_id=None -> random tự do (không có NV phụ trách chính để
+        # tra); ngược lại dùng NV phụ trách chính/thứ 2 theo handover_date,
+        # giống gen_sales_order/gen_debt (xem docstring _resolve_employee_id).
+        employee_id = _resolve_employee_id(
+            customer_id,
+            request_date,
+            employee_df,
+            customer_primary_employee,
+            customer_handover,
         )
         sales_order_id = None
         if is_won and len(used_sales_order_ids) < len(sales_order_ids):
@@ -272,9 +327,9 @@ def gen_price_request(
             {
                 "id": i,
                 "service_id": random.choice(service_df["id"].tolist()),
-                "employee_id": random.choice(employee_df["id"].tolist()),
+                "employee_id": employee_id,
                 "customer_id": customer_id,
-                "request_date": _random_date(start, TODAY),
+                "request_date": request_date,
                 "is_won": is_won,
                 "sales_order_id": sales_order_id,
             }
@@ -367,10 +422,13 @@ def gen_debt(
     division_df: pd.DataFrame,
     department_df: pd.DataFrame,
     employee_df: pd.DataFrame,
+    customer_primary_employee: dict[int, int],
+    customer_handover: dict[int, dict],
     n: int = 30,
 ) -> pd.DataFrame:
     rows = []
     for i in range(1, n + 1):
+        customer_id = random.choice(customer_df["id"].tolist())
         division_id = random.choice(division_df["id"].tolist())
         # Chọn department THUỘC ĐÚNG division đã chọn — giữ dữ liệu mẫu
         # nhất quán 2 cột division_id/department_id (xem mục 5 "Việc cần
@@ -383,6 +441,15 @@ def gen_debt(
         invoice_date = _random_date(
             TODAY - timedelta(days=365), TODAY - timedelta(days=1)
         )
+        # NV phụ trách chính/thứ 2 theo handover_date, giống gen_sales_order/
+        # gen_price_request — xem docstring _resolve_employee_id.
+        employee_id = _resolve_employee_id(
+            customer_id,
+            invoice_date,
+            employee_df,
+            customer_primary_employee,
+            customer_handover,
+        )
         # Trải đều 4 mức tuổi nợ 0-30/31-60/61-90/>90 ngày để dữ liệu mẫu
         # phủ đủ các ngưỡng báo cáo Công nợ.
         bucket = random.choice([15, 45, 75, 120])
@@ -390,10 +457,10 @@ def gen_debt(
         rows.append(
             {
                 "id": i,
-                "customer_id": random.choice(customer_df["id"].tolist()),
+                "customer_id": customer_id,
                 "division_id": division_id,
                 "department_id": department_id,
-                "employee_id": random.choice(employee_df["id"].tolist()),
+                "employee_id": employee_id,
                 "invoice_date": invoice_date,
                 "due_date": due_date,
                 "amount": round(random.uniform(10_000_000, 200_000_000), 2),
@@ -410,26 +477,57 @@ def gen_customer_classification_history(
     rows = []
     row_id = 1
     customer_ids = customer_df["id"].tolist()
+    # used_pairs theo dõi (customer_id, snapshot_date) đã dùng, tránh sinh
+    # dòng trùng cặp khoá nghiệp vụ (bug cũ: 2 dòng cùng customer_id +
+    # snapshot_date nhưng classification khác nhau, gây đếm sai xu hướng
+    # A/B/C tại 1 mốc thời gian).
+    used_pairs: set[tuple[int, date]] = set()
     # Đảm bảo mỗi customer có ít nhất 1 snapshot, phần còn lại random thêm.
+    # Mỗi customer chỉ xuất hiện đúng 1 lần ở vòng này -> cặp luôn duy nhất.
     for cid in customer_ids:
+        snapshot_date = random.choice(snapshot_dates)
         rows.append(
             {
                 "id": row_id,
                 "customer_id": cid,
                 "classification": random.choice(classifications),
-                "snapshot_date": random.choice(snapshot_dates),
+                "snapshot_date": snapshot_date,
             }
         )
+        used_pairs.add((cid, snapshot_date))
         row_id += 1
         if row_id > n:
             break
+
+    max_possible_pairs = len(customer_ids) * len(snapshot_dates)
+    max_retries_per_row = 200
     while row_id <= n:
+        if len(used_pairs) >= max_possible_pairs:
+            print(
+                f"gen_customer_classification_history: hết cặp (customer_id, "
+                f"snapshot_date) khả dụng ({max_possible_pairs}) — dừng sớm ở "
+                f"{row_id - 1}/{n} dòng thay vì sinh dòng trùng."
+            )
+            break
+        for _attempt in range(max_retries_per_row):
+            customer_id = random.choice(customer_ids)
+            snapshot_date = random.choice(snapshot_dates)
+            if (customer_id, snapshot_date) not in used_pairs:
+                break
+        else:
+            print(
+                f"gen_customer_classification_history: không tìm được cặp mới "
+                f"sau {max_retries_per_row} lần thử — dừng sớm ở {row_id - 1}/"
+                f"{n} dòng thay vì sinh dòng trùng."
+            )
+            break
+        used_pairs.add((customer_id, snapshot_date))
         rows.append(
             {
                 "id": row_id,
-                "customer_id": random.choice(customer_ids),
+                "customer_id": customer_id,
                 "classification": random.choice(classifications),
-                "snapshot_date": random.choice(snapshot_dates),
+                "snapshot_date": snapshot_date,
             }
         )
         row_id += 1
@@ -481,9 +579,47 @@ def main() -> None:
     supplier_df = gen_supplier()
     users_df = gen_users(employee_df)
 
-    sales_order_df = gen_sales_order(customer_df, service_df, employee_df)
+    # NV phụ trách chính cố định cho mỗi KH — sinh 1 LẦN DUY NHẤT (dùng đúng
+    # random state đang có, không seed lại), dùng chung cho gen_sales_order/
+    # gen_price_request/gen_debt để cùng 1 KH có cùng NV phụ trách chính
+    # xuyên suốt cả 3 loại giao dịch (sửa bug khiến ~73-80% KH mẫu bị suy ra
+    # thuộc phạm vi RBAC của nhiều NV/phòng ban khác nhau).
+    employee_ids = employee_df["id"].tolist()
+    customer_primary_employee = {
+        cid: random.choice(employee_ids) for cid in customer_df["id"].tolist()
+    }
+
+    # ~15% KH có "employee thứ 2" tiếp quản từ 1 mốc handover_date — random
+    # 1 LẦN mỗi KH (không phải mỗi giao dịch), tránh tích luỹ xác suất theo
+    # số giao dịch/KH như cách random 80/20 per-transaction ở lần sửa trước
+    # (khiến overlap thực đo lên tới ~57% dù chỉ đặt 20%/giao dịch — xem
+    # docstring _resolve_employee_id).
+    handover_range_start = TODAY - timedelta(days=365)
+    customer_handover: dict[int, dict] = {}
+    for cid in customer_df["id"].tolist():
+        if random.random() < 0.15:
+            secondary_candidates = [
+                eid for eid in employee_ids if eid != customer_primary_employee[cid]
+            ]
+            customer_handover[cid] = {
+                "secondary_employee": random.choice(secondary_candidates),
+                "handover_date": _random_date(handover_range_start, TODAY),
+            }
+
+    sales_order_df = gen_sales_order(
+        customer_df,
+        service_df,
+        employee_df,
+        customer_primary_employee,
+        customer_handover,
+    )
     price_request_df = gen_price_request(
-        service_df, employee_df, customer_df, sales_order_df
+        service_df,
+        employee_df,
+        customer_df,
+        sales_order_df,
+        customer_primary_employee,
+        customer_handover,
     )
     supplier_evaluation_df = gen_supplier_evaluation(
         supplier_df, service_df, employee_df
@@ -491,7 +627,14 @@ def main() -> None:
     cost_df = gen_cost(division_df)
     budget_df = gen_budget(division_df)
     personnel_cost_df = gen_personnel_cost()
-    debt_df = gen_debt(customer_df, division_df, department_df, employee_df)
+    debt_df = gen_debt(
+        customer_df,
+        division_df,
+        department_df,
+        employee_df,
+        customer_primary_employee,
+        customer_handover,
+    )
     classification_history_df = gen_customer_classification_history(customer_df)
     login_history_df = gen_login_history(users_df)
     audit_log_df = gen_audit_log(users_df)
