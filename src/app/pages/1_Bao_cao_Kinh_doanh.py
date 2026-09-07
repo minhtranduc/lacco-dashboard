@@ -1,5 +1,5 @@
 """Trang Streamlit — Báo cáo Kinh doanh: Doanh thu/lãi lỗ theo dịch vụ,
-khách hàng, và Khối-Phòng-NV (3 tab).
+khách hàng, Khối-Phòng-NV, và xu hướng theo thời gian (4 tab).
 
 Theo CLAUDE.md mục 2 (tách lớp): trang này CHỈ gọi hàm từ
 `src.services.report_kinh_doanh` rồi vẽ Plotly — KHÔNG viết SQL hay logic
@@ -98,6 +98,23 @@ def _cached_by_org(
     )
 
 
+@st.cache_data(ttl=60, show_spinner=False)
+def _cached_trend(
+    user_id: int,
+    role_value: str,
+    granularity: str,
+    date_from: date | None,
+    date_to: date | None,
+) -> pd.DataFrame:
+    """Cache xu hướng doanh thu/lãi lỗ theo Tháng/Tuần — khoá cache gắn
+    `user_id`/`role_value` (CLAUDE.md mục 6) cộng thêm `granularity` và
+    khoảng ngày lọc, cùng mẫu các hàm `_cached_by_*` khác trong file."""
+    scope = _cached_data_scope(user_id, role_value)
+    return report_kinh_doanh.get_revenue_profit_trend(
+        scope, granularity=granularity, date_from=date_from, date_to=date_to
+    )
+
+
 def _render_date_filters() -> tuple[date | None, date | None]:
     """Vẽ 2 ô lọc khoảng ngày (`order_date`), tuỳ chọn — mặc định không
     giới hạn (None, None) để không ẩn dữ liệu ngoài ý muốn khi mới vào
@@ -123,10 +140,12 @@ def _render_by_service(user_id: int, role_value: str, date_from, date_to) -> Non
 
     total_revenue = df["revenue"].sum()
     total_profit = df["profit"].sum()
-    col1, col2, col3 = st.columns(3)
+    total_margin = total_profit / total_revenue if total_revenue else 0.0
+    col1, col2, col3, col4 = st.columns(4)
     col1.metric("Tổng doanh thu", f"{total_revenue:,.0f}")
     col2.metric("Tổng lãi/lỗ", f"{total_profit:,.0f}")
-    col3.metric("Số dịch vụ", len(df))
+    col3.metric("Tỷ suất lợi nhuận", f"{total_margin:.1%}" if total_revenue else "N/A")
+    col4.metric("Số dịch vụ", len(df))
 
     cancelled = _cached_cancelled_summary(user_id, role_value, date_from, date_to)
     st.caption(
@@ -166,10 +185,14 @@ def _render_by_customer(user_id: int, role_value: str, date_from, date_to) -> No
         )
         return
 
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Tổng doanh thu", f"{df['revenue'].sum():,.0f}")
-    col2.metric("Tổng lãi/lỗ", f"{df['profit'].sum():,.0f}")
-    col3.metric("Số khách hàng", len(df))
+    total_revenue = df["revenue"].sum()
+    total_profit = df["profit"].sum()
+    total_margin = total_profit / total_revenue if total_revenue else 0.0
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Tổng doanh thu", f"{total_revenue:,.0f}")
+    col2.metric("Tổng lãi/lỗ", f"{total_profit:,.0f}")
+    col3.metric("Tỷ suất lợi nhuận", f"{total_margin:.1%}" if total_revenue else "N/A")
+    col4.metric("Số khách hàng", len(df))
 
     top_df = df.head(top_n)
     fig = px.bar(
@@ -215,10 +238,27 @@ def _render_by_org(user_id: int, role_value: str, date_from, date_to) -> None:
         .sort_values("revenue", ascending=False)
     )
 
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Tổng doanh thu", f"{agg['revenue'].sum():,.0f}")
-    col2.metric("Tổng lãi/lỗ", f"{agg['profit'].sum():,.0f}")
-    col3.metric(f"Số dòng ({level})", len(agg))
+    total_revenue = agg["revenue"].sum()
+    total_profit = agg["profit"].sum()
+    total_margin = total_profit / total_revenue if total_revenue else 0.0
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Tổng doanh thu", f"{total_revenue:,.0f}")
+    col2.metric("Tổng lãi/lỗ", f"{total_profit:,.0f}")
+    col3.metric("Tỷ suất lợi nhuận", f"{total_margin:.1%}" if total_revenue else "N/A")
+    col4.metric(f"Số dòng ({level})", len(agg))
+
+    # Khối thường ít dòng — không cần giới hạn top-N. Nhân viên/Phòng có
+    # thể nhiều dòng, thêm slider top-N giống mẫu `kd_top_n` ở
+    # `_render_by_customer` nhưng dùng key riêng để không xung đột.
+    if level in ("Nhân viên", "Phòng"):
+        top_n = st.slider(
+            "Số dòng hiển thị (top theo doanh thu)",
+            5,
+            50,
+            20,
+            key="kd_org_top_n",
+        )
+        agg = agg.head(top_n).reset_index(drop=True)
 
     fig = px.bar(
         agg,
@@ -232,10 +272,56 @@ def _render_by_org(user_id: int, role_value: str, date_from, date_to) -> None:
     st.dataframe(agg, use_container_width=True, hide_index=True)
 
 
+def _render_trend(user_id: int, role_value: str, date_from, date_to) -> None:
+    """Tab "Xu hướng theo thời gian" — Doanh thu/Lãi lỗ gộp theo Tháng hoặc
+    Tuần (`get_revenue_profit_trend`), vẽ `px.line` (xu hướng theo thời
+    gian dùng line chart, KHÔNG dùng bar — theo quy ước biểu đồ dự án)."""
+    granularity_label = st.radio(
+        "Gộp theo", ["Tháng", "Tuần"], horizontal=True, key="kd_trend_granularity"
+    )
+    granularity = "month" if granularity_label == "Tháng" else "week"
+
+    df = _cached_trend(user_id, role_value, granularity, date_from, date_to)
+    if df.empty:
+        st.warning(
+            "Không có dữ liệu xu hướng doanh thu/lãi lỗ trong phạm vi được phép xem."
+        )
+        return
+
+    total_revenue = df["revenue"].sum()
+    total_profit = df["profit"].sum()
+    total_margin = total_profit / total_revenue if total_revenue else 0.0
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Tổng doanh thu", f"{total_revenue:,.0f}")
+    col2.metric("Tổng lãi/lỗ", f"{total_profit:,.0f}")
+    col3.metric("Tỷ suất lợi nhuận", f"{total_margin:.1%}" if total_revenue else "N/A")
+
+    melted = df.melt(
+        id_vars=["period"],
+        value_vars=["revenue", "profit"],
+        var_name="Chỉ tiêu",
+        value_name="Giá trị",
+    )
+    label_map = {"revenue": "Doanh thu", "profit": "Lãi/lỗ"}
+    melted["Chỉ tiêu"] = melted["Chỉ tiêu"].map(label_map)
+    fig = px.line(
+        melted,
+        x="period",
+        y="Giá trị",
+        color="Chỉ tiêu",
+        markers=True,
+        title=f"Xu hướng Doanh thu / Lãi lỗ theo {granularity_label.lower()}",
+        labels={"period": granularity_label},
+    )
+    st.plotly_chart(fig, use_container_width=True)
+    st.dataframe(df, use_container_width=True, hide_index=True)
+
+
 def main() -> None:
     """Entry point trang Báo cáo Kinh doanh — kiểm tra đăng nhập trước
     (đúng key `st.session_state["lacco_auth_session"]` dùng ở `main.py`),
-    rồi hiển thị 3 tab theo dịch vụ / khách hàng / Khối-Phòng-NV."""
+    rồi hiển thị 4 tab: theo dịch vụ / khách hàng / Khối-Phòng-NV / xu hướng
+    theo thời gian."""
     st.title("Báo cáo Kinh doanh — Doanh thu / Lãi lỗ")
 
     session = st.session_state.get(_SESSION_KEY)
@@ -264,8 +350,13 @@ def main() -> None:
 
     date_from, date_to = _render_date_filters()
 
-    tab_service, tab_customer, tab_org = st.tabs(
-        ["Theo dịch vụ", "Theo khách hàng", "Theo Khối-Phòng-NV"]
+    tab_service, tab_customer, tab_org, tab_trend = st.tabs(
+        [
+            "Theo dịch vụ",
+            "Theo khách hàng",
+            "Theo Khối-Phòng-NV",
+            "Xu hướng theo thời gian",
+        ]
     )
     with tab_service:
         _render_by_service(user_id, role_value, date_from, date_to)
@@ -273,6 +364,8 @@ def main() -> None:
         _render_by_customer(user_id, role_value, date_from, date_to)
     with tab_org:
         _render_by_org(user_id, role_value, date_from, date_to)
+    with tab_trend:
+        _render_trend(user_id, role_value, date_from, date_to)
 
 
 if __name__ == "__main__":

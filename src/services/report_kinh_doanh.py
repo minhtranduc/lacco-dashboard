@@ -1,9 +1,14 @@
 """Service tính KPI báo cáo Kinh doanh — Doanh thu/lãi lỗ theo 3 chiều:
-dịch vụ, khách hàng, Khối-Phòng-NV.
+dịch vụ, khách hàng, Khối-Phòng-NV — cộng thêm xu hướng theo thời gian
+(tháng/tuần).
 
 Nguồn yêu cầu: `.claude/rules/trang-thai-yeu-cau.md`, nhóm "Kinh doanh" — cả
 3 báo cáo con (theo dịch vụ / theo khách hàng / theo Khối-Phòng-NV) đã
 "Đã rõ". Công thức lãi/lỗ = `revenue - order_cost` (CLAUDE.md, đã "Đã rõ").
+Tỷ suất lợi nhuận (`profit_margin`), Top-N Nhân viên/Phòng, và xu hướng theo
+Tháng/Tuần là 3 KPI bổ sung theo Phụ lục B (SDD gốc) — dùng lại đúng công
+thức lãi/lỗ và bộ lọc RBAC/"Huỷ" đã "Đã rõ" ở trên, không phải công thức
+nghiệp vụ mới cần xác nhận thêm.
 
 Theo CLAUDE.md mục 2 (tách lớp): module này chỉ chứa truy vấn SQLAlchemy
 (parameterized, cấm nối chuỗi SQL thủ công — CLAUDE.md mục 4) + tính toán
@@ -98,6 +103,21 @@ def _apply_date_filter(stmt, date_from: date | None, date_to: date | None):
     return stmt
 
 
+def _add_profit_margin_column(df: pd.DataFrame) -> pd.DataFrame:
+    """Thêm cột `profit_margin` (= `profit / revenue`) vào DataFrame đã có
+    sẵn 2 cột `revenue`/`profit`.
+
+    *** QUYẾT ĐỊNH chia cho 0: trả về `0.0`, KHÔNG trả `None` *** — cột này
+    được dùng trực tiếp để hiển thị `st.metric`/định dạng phần trăm
+    (`f"{x:.1%}"`) ở trang Streamlit; `None` sẽ làm lỗi định dạng chuỗi tại
+    nơi hiển thị. Về nghiệp vụ, dòng/nhóm không có doanh thu thì quy ước tỷ
+    suất lợi nhuận = 0% (không có gì để tính tỷ suất) thay vì  NaN/lỗi.
+    Áp dụng dạng vector hoá (không lặp `apply(axis=1)`) để giữ hiệu năng.
+    """
+    df["profit_margin"] = (df["profit"] / df["revenue"]).where(df["revenue"] != 0, 0.0)
+    return df
+
+
 def get_revenue_profit_by_service(
     scope: DataScope,
     *,
@@ -117,9 +137,11 @@ def get_revenue_profit_by_service(
 
     Returns:
         DataFrame với các cột: `service_id`, `service_name`, `order_count`,
-        `revenue`, `order_cost`, `profit` — sắp xếp giảm dần theo `revenue`.
-        Trả về DataFrame rỗng (đúng cột) nếu `scope.customer_ids` rỗng và
-        `scope.unrestricted` là False (không có dữ liệu để xem).
+        `revenue`, `order_cost`, `profit`, `profit_margin` (= `profit /
+        revenue`, `0.0` khi `revenue == 0` — xem `_add_profit_margin_column`)
+        — sắp xếp giảm dần theo `revenue`. Trả về DataFrame rỗng (đúng cột)
+        nếu `scope.customer_ids` rỗng và `scope.unrestricted` là False
+        (không có dữ liệu để xem).
     """
     engine = engine or get_engine()
     columns = [
@@ -129,6 +151,7 @@ def get_revenue_profit_by_service(
         "revenue",
         "order_cost",
         "profit",
+        "profit_margin",
     ]
 
     if not scope.unrestricted and not scope.customer_ids:
@@ -157,10 +180,11 @@ def get_revenue_profit_by_service(
     with Session(engine) as session:
         rows = session.execute(stmt).all()
 
-    df = pd.DataFrame(rows, columns=columns[:-1])
+    df = pd.DataFrame(rows, columns=columns[:-2])
     df["revenue"] = df["revenue"].astype(float)
     df["order_cost"] = df["order_cost"].astype(float)
     df["profit"] = df["revenue"] - df["order_cost"]
+    df = _add_profit_margin_column(df)
     df = df.sort_values("revenue", ascending=False).reset_index(drop=True)
     logger.info(
         "get_revenue_profit_by_service: user_id={} -> {} dịch vụ.",
@@ -189,8 +213,9 @@ def get_revenue_profit_by_customer(
 
     Returns:
         DataFrame với các cột: `customer_id`, `customer_code`,
-        `customer_name`, `order_count`, `revenue`, `order_cost`, `profit`
-        — sắp xếp giảm dần theo `revenue`.
+        `customer_name`, `order_count`, `revenue`, `order_cost`, `profit`,
+        `profit_margin` (= `profit / revenue`, `0.0` khi `revenue == 0` —
+        xem `_add_profit_margin_column`) — sắp xếp giảm dần theo `revenue`.
     """
     engine = engine or get_engine()
     columns = [
@@ -201,6 +226,7 @@ def get_revenue_profit_by_customer(
         "revenue",
         "order_cost",
         "profit",
+        "profit_margin",
     ]
 
     if not scope.unrestricted and not scope.customer_ids:
@@ -230,10 +256,11 @@ def get_revenue_profit_by_customer(
     with Session(engine) as session:
         rows = session.execute(stmt).all()
 
-    df = pd.DataFrame(rows, columns=columns[:-1])
+    df = pd.DataFrame(rows, columns=columns[:-2])
     df["revenue"] = df["revenue"].astype(float)
     df["order_cost"] = df["order_cost"].astype(float)
     df["profit"] = df["revenue"] - df["order_cost"]
+    df = _add_profit_margin_column(df)
     df = df.sort_values("revenue", ascending=False).reset_index(drop=True)
     if top_n is not None:
         df = df.head(top_n).reset_index(drop=True)
@@ -268,8 +295,9 @@ def get_revenue_profit_by_org(
     Returns:
         DataFrame với các cột: `division_id`, `division_name`,
         `department_id`, `department_name`, `employee_id`, `employee_name`,
-        `order_count`, `revenue`, `order_cost`, `profit` — sắp xếp giảm dần
-        theo `revenue`.
+        `order_count`, `revenue`, `order_cost`, `profit`, `profit_margin`
+        (= `profit / revenue`, `0.0` khi `revenue == 0` — xem
+        `_add_profit_margin_column`) — sắp xếp giảm dần theo `revenue`.
     """
     engine = engine or get_engine()
     columns = [
@@ -283,6 +311,7 @@ def get_revenue_profit_by_org(
         "revenue",
         "order_cost",
         "profit",
+        "profit_margin",
     ]
 
     if not scope.unrestricted and not scope.customer_ids:
@@ -324,14 +353,115 @@ def get_revenue_profit_by_org(
     with Session(engine) as session:
         rows = session.execute(stmt).all()
 
-    df = pd.DataFrame(rows, columns=columns[:-1])
+    df = pd.DataFrame(rows, columns=columns[:-2])
     df["revenue"] = df["revenue"].astype(float)
     df["order_cost"] = df["order_cost"].astype(float)
     df["profit"] = df["revenue"] - df["order_cost"]
+    df = _add_profit_margin_column(df)
     df = df.sort_values("revenue", ascending=False).reset_index(drop=True)
     logger.info(
         "get_revenue_profit_by_org: user_id={} -> {} dòng (Khối-Phòng-NV).",
         scope.user_id,
+        len(df),
+    )
+    return df
+
+
+def get_revenue_profit_trend(
+    scope: DataScope,
+    *,
+    engine: Engine | None = None,
+    granularity: str = "month",
+    date_from: date | None = None,
+    date_to: date | None = None,
+) -> pd.DataFrame:
+    """Xu hướng doanh thu/lãi lỗ theo thời gian, gộp theo tháng hoặc tuần
+    của `sales_order.order_date`, đã lọc theo RBAC + loại trừ đơn "Huỷ".
+
+    *** Cách gộp theo thời gian (dialect MySQL — `src/services/
+    db_connection.py` dùng `mysql+mysqlconnector`, xem `build_mysql_url()`)
+    ***, hoàn toàn qua SQLAlchemy `func.date_format` (KHÔNG raw SQL/f-string
+    nối chuỗi):
+    - `granularity="month"`: `func.date_format(order_date, "%Y-%m-01")` —
+      gộp về ngày đầu tháng. Cột `period` được ép kiểu `datetime64` (qua
+      `pd.to_datetime`) sau khi lấy dữ liệu, để `px.line` vẽ đúng trục thời
+      gian liên tục (không phải trục danh mục).
+    - `granularity="week"`: `func.date_format(order_date, "%x-%v")` — cặp
+      định dạng tuần ISO 8601 của MySQL (`%v` = số tuần 01-53, tuần bắt đầu
+      Thứ Hai; `%x` = năm ISO tương ứng, PHẢI dùng kèm `%v`, không dùng lẻ
+      `%Y`). Cố tình KHÔNG dùng `%Y-%u` (`%u` là tuần kiểu Thứ Hai đầu tuần
+      nhưng không phải chuẩn ISO, dễ lệch năm ở các tuần giáp Tết dương
+      lịch). Cột `period` giữ dạng chuỗi `"YYYY-Www"` (VD `"2026-05"`) —
+      chuỗi đã zero-pad nên sắp xếp tăng dần bằng string vẫn đúng thứ tự
+      thời gian; không ép kiểu ngày vì 1 tuần ISO không map 1-1 sang 1 ngày
+      cụ thể để làm mốc.
+
+    *** ĐÃ XÁC NHẬN: quy ước tuần ISO 8601 (COO, 07/09/2026) *** — lựa
+    chọn `%x-%v` (tuần ISO, bắt đầu Thứ Hai) ở trên ban đầu là giả định kỹ
+    thuật, đã được COO xác nhận giữ nguyên, không đổi sang quy ước tuần
+    kiểu khác (VD tuần kiểu Mỹ `%U`/`%u`) để khớp báo cáo AMIS/FT. Không
+    còn là mục cần hỏi lại.
+
+    Args:
+        scope: Phạm vi dữ liệu của user đang đăng nhập.
+        engine: SQLAlchemy Engine tuỳ chọn.
+        granularity: `"month"` (mặc định) hoặc `"week"`.
+        date_from, date_to: Lọc theo `order_date`, tuỳ chọn.
+
+    Returns:
+        DataFrame với các cột: `period`, `revenue`, `profit` — sắp xếp tăng
+        dần theo `period`. Trả về DataFrame rỗng (đúng cột) nếu
+        `scope.customer_ids` rỗng và `scope.unrestricted` là False.
+
+    Raises:
+        ValueError: nếu `granularity` không phải `"month"`/`"week"`.
+    """
+    if granularity not in ("month", "week"):
+        raise ValueError(
+            f"granularity phải là 'month' hoặc 'week', nhận: {granularity!r}"
+        )
+
+    engine = engine or get_engine()
+    columns = ["period", "revenue", "profit"]
+
+    if not scope.unrestricted and not scope.customer_ids:
+        logger.warning(
+            "get_revenue_profit_trend: scope rỗng (user_id={}) -> trả về "
+            "DataFrame rỗng.",
+            scope.user_id,
+        )
+        return pd.DataFrame(columns=columns)
+
+    if granularity == "month":
+        period_expr = func.date_format(SalesOrder.order_date, "%Y-%m-01")
+    else:
+        period_expr = func.date_format(SalesOrder.order_date, "%x-%v")
+
+    stmt = select(
+        period_expr.label("period"),
+        func.coalesce(func.sum(SalesOrder.revenue), 0).label("revenue"),
+        func.coalesce(func.sum(SalesOrder.order_cost), 0).label("order_cost"),
+    ).group_by(period_expr)
+    stmt = _apply_scope_filter(stmt, scope)
+    stmt = _exclude_cancelled_orders(stmt)
+    stmt = _apply_date_filter(stmt, date_from, date_to)
+    stmt = stmt.order_by(period_expr)
+
+    with Session(engine) as session:
+        rows = session.execute(stmt).all()
+
+    df = pd.DataFrame(rows, columns=["period", "revenue", "order_cost"])
+    df["revenue"] = df["revenue"].astype(float)
+    df["order_cost"] = df["order_cost"].astype(float)
+    df["profit"] = df["revenue"] - df["order_cost"]
+    df = df.drop(columns=["order_cost"])
+    if granularity == "month":
+        df["period"] = pd.to_datetime(df["period"])
+    df = df.sort_values("period").reset_index(drop=True)
+    logger.info(
+        "get_revenue_profit_trend: user_id={} granularity={} -> {} kỳ.",
+        scope.user_id,
+        granularity,
         len(df),
     )
     return df
