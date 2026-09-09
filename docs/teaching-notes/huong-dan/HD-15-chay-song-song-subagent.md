@@ -64,3 +64,49 @@ Kiểm chứng RBAC end-to-end thật (không chỉ đọc code) cho 3 vai trò,
 ## Kết quả
 
 Bước 4.1 hoàn thành: 2 module báo cáo (Kinh doanh, Khách hàng) chạy được thật, RBAC lọc đúng theo scope cho cả 3 vai trò, doanh thu/lãi lỗ loại trừ đúng đơn Huỷ theo quyết định COO. Phát sinh và xử lý dứt điểm 2 lỗi kỹ thuật nền tảng (bộ sinh dữ liệu mẫu, migration `downgrade()`) phát hiện được chính nhờ quy trình "không tự đoán, liệt kê cần xác nhận" của persona `report-builder-agent`. Lần đầu tiên trong dự án chạy 2 subagent thật sự song song (không tuần tự), 0 xung đột file.
+
+
+---
+
+## Mở rộng ở bước 5.1 (Tuần 5): 2 đợt x 2 song song, 4 module
+
+**Ngày thực hiện:** 09/09/2026
+
+Sau khi 4.1 chứng minh 2 instance song song an toàn, bước 5.1 thử quy mô lớn hơn: xây 4 module còn lại (Đơn hàng, Pricing, Chi phí, Công nợ). Vì đây là lần đầu vượt quá 2 instance, quyết định KHÔNG chạy cả 4 cùng lúc mà chia **2 đợt x 2 song song** (Đợt 1: Đơn hàng + Pricing; Đợt 2: Chi phí + Công nợ) — đánh đổi thời gian chờ dài hơn 1 chút để giữ được khả năng đối chiếu/kiểm soát từng đợt, đúng nguyên tắc "mở rộng quy mô dần, không nhảy thẳng lên mức chưa kiểm chứng".
+
+### 4 quyết định hỏi COO qua `AskUserQuestion` trước khi giao việc (không để agent tự đoán)
+
+| Quyết định | Vì sao không thể để agent tự đoán | COO chọn |
+|---|---|---|
+| Cách tính "quá hạn bao nhiêu ngày" cho Công nợ | Ảnh hưởng trực tiếp thiết kế hàm (tính động hay lưu snapshot) — mục #6 còn mở từ `erd-tuan-02.md` | Tính động tại thời điểm xem, không lưu cột vật lý |
+| RBAC báo cáo Chi phí theo Khối | Dữ liệu tài chính nhạy cảm hơn doanh thu — không có tiền lệ để agent suy luận theo | Manager/Admin xem theo Khối/Phòng mình, User bị ẩn hẳn |
+| RBAC báo cáo Chi phí theo Nhóm nhân sự | Bảng `personnel_cost` không có cột liên kết nào để lọc RBAC — phải quyết định ai được xem trước khi viết code, không sửa được sau khi đã code | Chỉ Admin |
+| Số subagent chạy song song | Rủi ro vận hành (khó kiểm soát 4 báo cáo trả về cùng lúc), không phải câu hỏi kỹ thuật thuần tuý | 2 đợt x 2 |
+
+### Mẫu RBAC mới: ẩn hẳn UI theo role, không chỉ lọc dữ liệu rỗng
+
+Khác với 4.1 (mọi role đều thấy trang, chỉ khác phạm vi dữ liệu), Chi phí có 2 sub-report cần **ẩn hẳn khỏi giao diện** với một số role (không phải hiển thị bảng rỗng). Thiết kế yêu cầu 2 lớp độc lập:
+
+1. Service raise `PermissionError` nếu bị gọi nhầm với scope không đủ quyền (phòng vệ tầng dữ liệu).
+2. Trang Streamlit quyết định ẩn/hiện tab dựa **trực tiếp vào `scope.unrestricted`/role trước khi gọi hàm** — không dựa vào việc bắt được `PermissionError` để suy ra nên ẩn gì (nếu làm vậy, tab vẫn thoáng hiện ra rồi mới báo lỗi, trải nghiệm xấu và dễ lộ thông tin trong khoảnh khắc render).
+
+Cả 4 module đều tuân thủ đúng mẫu này khi review code trực tiếp (không chỉ tin báo cáo agent).
+
+### Lỗi kỹ thuật thứ 3 — bằng chứng thứ 2 cho bài học "không phải mọi con số đáng báo động đều là lỗi kiến trúc"
+
+Agent phụ trách Công nợ tự chạy kiểm tra và báo cáo "26/30 dòng (87%) `debt.department_id` khác phòng ban thật của nhân viên đứng tên" như một mục "cần xác nhận" — đóng khung như thể đây là câu hỏi nghiệp vụ cần hỏi lại COO/Vận hành (tương tự khung mà agent ở 4.1 từng đóng cho overlap KH/NV). Trước khi chuyển câu hỏi này lên COO, đọc thẳng `scripts/generate_synthetic_sample_data.py::gen_debt()` để kiểm chứng — phát hiện: `division_id`/`department_id` của mỗi dòng nợ được chọn bằng `random.choice()` **độc lập** với `employee_id` (vốn được suy ra riêng theo khách hàng) — hai giá trị ngẫu nhiên độc lập dĩ nhiên lệch nhau phần lớn thời gian. Đây là lỗi sinh dữ liệu, không phải thực tế nghiệp vụ (nhân viên phụ trách nợ ở nhiều phòng).
+
+Cách xử lý: sửa `gen_debt()` để suy `department_id`/`division_id` TỪ `employee_id` đã resolve (đúng thứ tự nhân quả — nhân viên quyết định phòng/khối, không phải ngược lại), sinh lại dữ liệu mẫu, import lại, xác minh còn 0/30 lệch (đối chiếu độc lập bằng cách tự tay cross-check thủ công file CSV, không chỉ tin log agent).
+
+Đây là bằng chứng thứ 2 (sau overlap KH/NV ở 4.1) cho cùng 1 nguyên tắc: **khi 1 agent báo cáo 1 con số "đáng báo động" như câu hỏi nghiệp vụ, luôn tự hỏi "đây có phải hệ quả cách sinh dữ liệu không?" trước khi chuyển câu hỏi đó lên COO** — đọc code gốc để kiểm chứng rẻ hơn nhiều so với làm phiền COO bằng 1 câu hỏi không có thật, và rẻ hơn nhiều so với việc để sai lệch RBAC "có vẻ đúng nhưng dựa trên dữ liệu sai" lọt qua.
+
+### Kết quả thu được (bước 5.1)
+
+Commit `325bbcd3` (16 file, +3544/−161 dòng): 4 cặp service+trang mới (`report_don_hang.py`, `report_pricing.py`, `report_chi_phi.py`, `report_cong_no.py` + 4 trang Streamlit), fix `gen_debt()`, sinh lại 7 file dữ liệu mẫu bị ảnh hưởng theo dây chuyền (thứ tự gọi hàm sinh dữ liệu trong `main()` khiến các bảng sinh SAU `debt` — `customer_classification_history`, `login_history`, `audit_log` — cũng đổi giá trị dù không sửa code, vì cùng dùng 1 chuỗi random theo `SEED=42`; các bảng sinh TRƯỚC `debt` như `sales_order`/`cost` không đổi giá trị, chỉ đổi timestamp nội bộ file `.xlsx`). CI xanh — xác minh độc lập qua GitHub REST API, run [`34367239192`](https://github.com/minhtranduc/lacco-dashboard/actions/runs/34367239192), `conclusion: success`.
+
+## Bài học rút ra (bổ sung từ bước 5.1)
+
+- **Mở rộng quy mô song song nên tăng dần, có điểm dừng đối chiếu giữa các đợt** — 2 đợt x 2 giữ được khả năng phát hiện lỗi (như lỗi `gen_debt()`) trước khi nó lan sang đợt tiếp theo, thay vì phải gỡ rối giữa 4 báo cáo trả về cùng lúc.
+- **"Ẩn hẳn UI theo quyền" cần quyết định hiển thị dựa trên kiểm tra quyền TRƯỚC khi gọi service, không dựa trên việc bắt lỗi phân quyền** — bắt exception chỉ nên là lớp phòng vệ thứ 2, không phải cơ chế chính để quyết định giao diện.
+- **Một lỗi sinh dữ liệu có thể lặp lại dưới dạng khác** — 4.1 gặp lỗi tích luỹ xác suất Bernoulli, 5.1 gặp lỗi 2 cột được sinh độc lập nhau khi lẽ ra phải suy ra từ 1 nguồn — cả 2 đều bị agent đóng khung nhầm thành câu hỏi nghiệp vụ; nguyên tắc "đọc code sinh dữ liệu trước khi tin con số đáng báo động" cần áp dụng lại từ đầu ở MỌI module mới, không coi là "đã học rồi nên module sau chắc không dính nữa".
+- **Sửa 1 hàm sinh dữ liệu có thể làm lệch dữ liệu của các bảng sinh SAU nó trong cùng 1 lần chạy** (dù giữ nguyên `SEED`) — cần giải thích rõ hệ quả dây chuyền này khi báo cáo lại, và re-verify toàn bộ các bất biến đã xác lập trước đó (overlap KH/NV, dedup phân loại KH) chứ không chỉ verify phần vừa sửa.
