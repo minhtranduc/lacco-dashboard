@@ -419,25 +419,17 @@ def gen_personnel_cost() -> pd.DataFrame:
 
 def gen_debt(
     customer_df: pd.DataFrame,
-    division_df: pd.DataFrame,
     department_df: pd.DataFrame,
     employee_df: pd.DataFrame,
     customer_primary_employee: dict[int, int],
     customer_handover: dict[int, dict],
     n: int = 30,
 ) -> pd.DataFrame:
+    employee_department = dict(zip(employee_df["id"], employee_df["department_id"]))
+    department_division = dict(zip(department_df["id"], department_df["division_id"]))
     rows = []
     for i in range(1, n + 1):
         customer_id = random.choice(customer_df["id"].tolist())
-        division_id = random.choice(division_df["id"].tolist())
-        # Chọn department THUỘC ĐÚNG division đã chọn — giữ dữ liệu mẫu
-        # nhất quán 2 cột division_id/department_id (xem mục 5 "Việc cần
-        # xác nhận" erd-tuan-02.md: model cho phép 2 cột lệch nhau, nhưng
-        # dữ liệu mẫu không cố tình tạo lệch để tránh gây hiểu nhầm là bug).
-        dept_candidates = department_df[department_df["division_id"] == division_id][
-            "id"
-        ].tolist()
-        department_id = random.choice(dept_candidates)
         invoice_date = _random_date(
             TODAY - timedelta(days=365), TODAY - timedelta(days=1)
         )
@@ -450,6 +442,16 @@ def gen_debt(
             customer_primary_employee,
             customer_handover,
         )
+        # department_id/division_id PHẢI suy ra TỪ employee_id vừa chọn ở
+        # trên (đúng quan hệ nhân quả: cột "Nhân viên kinh doanh phụ trách
+        # khoản nợ" trong docstring model Debt quyết định nhân viên đó
+        # thuộc Khối/Phòng nào, không phải ngược lại) — sửa lỗi sinh dữ
+        # liệu phát hiện ở bước 5.1 (module Công nợ): bản cũ chọn
+        # division_id/department_id độc lập bằng random.choice() rồi mới
+        # suy employee_id theo customer_id riêng, khiến ~87% dòng debt có
+        # department_id không khớp phòng ban thật của nhân viên đứng tên.
+        department_id = employee_department[employee_id]
+        division_id = department_division[department_id]
         # Trải đều 4 mức tuổi nợ 0-30/31-60/61-90/>90 ngày để dữ liệu mẫu
         # phủ đủ các ngưỡng báo cáo Công nợ.
         bucket = random.choice([15, 45, 75, 120])
@@ -629,7 +631,6 @@ def main() -> None:
     personnel_cost_df = gen_personnel_cost()
     debt_df = gen_debt(
         customer_df,
-        division_df,
         department_df,
         employee_df,
         customer_primary_employee,
