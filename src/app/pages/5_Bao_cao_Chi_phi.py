@@ -29,6 +29,7 @@ nhạy cảm), xem docstring đầy đủ ở `src/services/report_chi_phi.py` *
 from __future__ import annotations
 
 from datetime import date
+from typing import Any
 
 import pandas as pd
 import plotly.express as px
@@ -37,7 +38,7 @@ from loguru import logger
 
 from src.auth.scope import DataScope, compute_data_scope
 from src.db.models.enums import UserRole
-from src.services import report_chi_phi
+from src.services import export_utils, report_chi_phi
 from src.services.db_connection import get_engine
 
 st.set_page_config(page_title="LACCO Dashboard — Báo cáo Chi phí", layout="wide")
@@ -144,6 +145,66 @@ def _cached_personnel_cost_trend(
     )
 
 
+def _render_export_buttons(
+    df: pd.DataFrame,
+    fig: Any,
+    *,
+    key_prefix: str,
+    file_stub: str,
+    title: str,
+    subtitle: str | None = None,
+) -> None:
+    """2 nút xuất Excel/PDF cho 1 báo cáo con (VIỆC 3, bước 6.1) — dùng
+    đúng `df`/`fig` đã tính sẵn ở hàm `_render_*` gọi hàm này, KHÔNG truy
+    vấn DB mới. Không bọc `@st.cache_data` (CLAUDE.md mục 6). Nút PDF tách
+    2 bước (bấm tạo rồi mới hiện nút tải) — Streamlit đánh giá lại `data=`
+    mỗi lần rerun trang, gọi trực tiếp sẽ tốn kaleido render lại ở MỌI lần
+    rerun (đã kiểm chứng thật, xem báo cáo bước 6.1)."""
+    col_excel, col_pdf = st.columns(2)
+    today_str = date.today().isoformat()
+
+    with col_excel:
+        st.download_button(
+            "⬇️ Xuất Excel",
+            data=export_utils.dataframe_to_excel_bytes(
+                df, sheet_name=key_prefix[:31], title=title
+            ),
+            file_name=f"{file_stub}_{today_str}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key=f"{key_prefix}_export_xlsx",
+        )
+
+    with col_pdf:
+        if st.button("⬇️ Xuất PDF", key=f"{key_prefix}_export_pdf_btn"):
+            try:
+                pdf_bytes = export_utils.build_pdf_report_bytes(
+                    df, fig, title=title, subtitle=subtitle
+                )
+            except RuntimeError as exc:
+                st.error(f"Không thể tạo file PDF: {exc}")
+                logger.error(
+                    "Xuất PDF lỗi tại '{}' (title='{}'): {}", key_prefix, title, exc
+                )
+            else:
+                st.download_button(
+                    "Tải file PDF",
+                    data=pdf_bytes,
+                    file_name=f"{file_stub}_{today_str}.pdf",
+                    mime="application/pdf",
+                    key=f"{key_prefix}_export_pdf_dl",
+                )
+
+
+def _date_filter_subtitle(date_from: date | None, date_to: date | None) -> str | None:
+    """Mô tả bộ lọc khoảng kỳ (`period`) đang áp dụng, dùng làm `subtitle`
+    cho PDF — trả `None` nếu không lọc."""
+    if date_from is None and date_to is None:
+        return None
+    tu = date_from.strftime("%d/%m/%Y") if date_from else "..."
+    den = date_to.strftime("%d/%m/%Y") if date_to else "..."
+    return f"Lọc theo kỳ (period): từ {tu} đến {den}"
+
+
 def _render_date_filters(*, key_prefix: str) -> tuple:
     """Vẽ 2 ô lọc khoảng ngày theo `period`, tuỳ chọn — mặc định không giới
     hạn (None, None) để không ẩn dữ liệu ngoài ý muốn khi mới vào trang."""
@@ -208,6 +269,17 @@ def _render_cost_by_division(user_id: int, role_value: str, date_from, date_to) 
 
     st.dataframe(df, use_container_width=True, hide_index=True)
 
+    # Chỉ xuất chart "Chi thực tế vs Ngân sách" (fig) kèm bảng — fig_pct là
+    # biểu đồ phụ (chênh lệch %), không lặp lại 2 lần trong 1 file xuất.
+    _render_export_buttons(
+        df,
+        fig,
+        key_prefix="cp_khoi",
+        file_stub="chi_phi_theo_khoi",
+        title="Chi thực tế vs Ngân sách theo Khối",
+        subtitle=_date_filter_subtitle(date_from, date_to),
+    )
+
 
 def _render_cost_trend(user_id: int, role_value: str, date_from, date_to) -> None:
     """Xu hướng chi vs ngân sách theo Tháng/Tuần — `px.line` (xu hướng theo
@@ -261,6 +333,15 @@ def _render_cost_trend(user_id: int, role_value: str, date_from, date_to) -> Non
     )
     st.plotly_chart(fig, use_container_width=True)
     st.dataframe(df, use_container_width=True, hide_index=True)
+
+    _render_export_buttons(
+        df,
+        fig,
+        key_prefix="cp_khoi_trend",
+        file_stub="chi_phi_xu_huong_theo_khoi",
+        title=f"Xu hướng chi thực tế vs ngân sách theo {granularity_label.lower()}",
+        subtitle=_date_filter_subtitle(date_from, date_to),
+    )
 
 
 def _render_theo_khoi_tab(scope: DataScope, user_id: int, role_value: str) -> None:
@@ -317,6 +398,15 @@ def _render_personnel_by_group(
     st.plotly_chart(fig, use_container_width=True)
     st.dataframe(df, use_container_width=True, hide_index=True)
 
+    _render_export_buttons(
+        df,
+        fig,
+        key_prefix="cp_nhom",
+        file_stub="chi_phi_theo_nhom_nhan_su",
+        title="Chi phí theo Nhóm nhân sự",
+        subtitle=_date_filter_subtitle(date_from, date_to),
+    )
+
 
 def _render_personnel_trend(user_id: int, role_value: str, date_from, date_to) -> None:
     granularity_label = st.radio(
@@ -365,6 +455,15 @@ def _render_personnel_trend(user_id: int, role_value: str, date_from, date_to) -
     )
     st.plotly_chart(fig, use_container_width=True)
     st.dataframe(df, use_container_width=True, hide_index=True)
+
+    _render_export_buttons(
+        df,
+        fig,
+        key_prefix="cp_nhom_trend",
+        file_stub="chi_phi_xu_huong_theo_nhom_nhan_su",
+        title=f"Xu hướng chi phí theo Nhóm nhân sự — {granularity_label.lower()}",
+        subtitle=_date_filter_subtitle(date_from, date_to),
+    )
 
 
 def _render_theo_nhom_nhan_su_tab(user_id: int, role_value: str) -> None:

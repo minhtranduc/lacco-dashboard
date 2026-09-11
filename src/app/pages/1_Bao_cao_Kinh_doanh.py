@@ -20,6 +20,7 @@ KHÔNG dùng biến global.
 from __future__ import annotations
 
 from datetime import date
+from typing import Any
 
 import pandas as pd
 import plotly.express as px
@@ -27,7 +28,7 @@ import streamlit as st
 from loguru import logger
 
 from src.auth.scope import DataScope, compute_data_scope
-from src.services import report_kinh_doanh
+from src.services import export_utils, report_kinh_doanh
 from src.services.db_connection import get_engine
 
 st.set_page_config(page_title="LACCO Dashboard — Báo cáo Kinh doanh", layout="wide")
@@ -115,6 +116,70 @@ def _cached_trend(
     )
 
 
+def _date_filter_subtitle(date_from: date | None, date_to: date | None) -> str | None:
+    """Mô tả bộ lọc khoảng ngày đang áp dụng, dùng làm `subtitle` cho PDF —
+    trả `None` nếu không lọc (để `build_pdf_report_bytes` bỏ qua dòng phụ)."""
+    if date_from is None and date_to is None:
+        return None
+    tu = date_from.strftime("%d/%m/%Y") if date_from else "..."
+    den = date_to.strftime("%d/%m/%Y") if date_to else "..."
+    return f"Lọc theo order_date: từ {tu} đến {den}"
+
+
+def _render_export_buttons(
+    df: pd.DataFrame,
+    fig: Any,
+    *,
+    key_prefix: str,
+    file_stub: str,
+    title: str,
+    subtitle: str | None = None,
+) -> None:
+    """2 nút xuất Excel/PDF cho 1 báo cáo con (VIỆC 3, bước 6.1) — dùng
+    đúng `df`/`fig` đã tính sẵn ở hàm `_render_*` gọi hàm này, KHÔNG truy
+    vấn DB mới. Không bọc `@st.cache_data` (không truy vấn DB, không cần
+    thiết — tránh rủi ro cache sai phạm vi không cần thiết theo CLAUDE.md
+    mục 6). Nút PDF tách 2 bước (bấm tạo rồi mới hiện nút tải) thay vì gọi
+    `build_pdf_report_bytes` trực tiếp trong `data=` — Streamlit ĐÁNH GIÁ
+    LẠI `data=` mỗi lần rerun trang (mọi tương tác widget khác trên trang
+    đều rerun), nếu gọi trực tiếp thì MỖI lần rerun đều tốn kaleido render
+    chart lại (vài giây, hoặc treo/timeout ~20s nếu môi trường lỗi kaleido —
+    đã gặp thật khi test module `export_utils`, xem báo cáo bước 6.1)."""
+    col_excel, col_pdf = st.columns(2)
+    today_str = date.today().isoformat()
+
+    with col_excel:
+        st.download_button(
+            "⬇️ Xuất Excel",
+            data=export_utils.dataframe_to_excel_bytes(
+                df, sheet_name=key_prefix[:31], title=title
+            ),
+            file_name=f"{file_stub}_{today_str}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key=f"{key_prefix}_export_xlsx",
+        )
+
+    with col_pdf:
+        if st.button("⬇️ Xuất PDF", key=f"{key_prefix}_export_pdf_btn"):
+            try:
+                pdf_bytes = export_utils.build_pdf_report_bytes(
+                    df, fig, title=title, subtitle=subtitle
+                )
+            except RuntimeError as exc:
+                st.error(f"Không thể tạo file PDF: {exc}")
+                logger.error(
+                    "Xuất PDF lỗi tại '{}' (title='{}'): {}", key_prefix, title, exc
+                )
+            else:
+                st.download_button(
+                    "Tải file PDF",
+                    data=pdf_bytes,
+                    file_name=f"{file_stub}_{today_str}.pdf",
+                    mime="application/pdf",
+                    key=f"{key_prefix}_export_pdf_dl",
+                )
+
+
 def _render_date_filters() -> tuple[date | None, date | None]:
     """Vẽ 2 ô lọc khoảng ngày (`order_date`), tuỳ chọn — mặc định không
     giới hạn (None, None) để không ẩn dữ liệu ngoài ý muốn khi mới vào
@@ -173,6 +238,15 @@ def _render_by_service(user_id: int, role_value: str, date_from, date_to) -> Non
     st.plotly_chart(fig, use_container_width=True)
     st.dataframe(df, use_container_width=True, hide_index=True)
 
+    _render_export_buttons(
+        df,
+        fig,
+        key_prefix="kd_service",
+        file_stub="kinh_doanh_theo_dich_vu",
+        title="Doanh thu / Lãi lỗ theo dịch vụ",
+        subtitle=_date_filter_subtitle(date_from, date_to),
+    )
+
 
 def _render_by_customer(user_id: int, role_value: str, date_from, date_to) -> None:
     top_n = st.slider(
@@ -209,6 +283,16 @@ def _render_by_customer(user_id: int, role_value: str, date_from, date_to) -> No
     )
     st.plotly_chart(fig, use_container_width=True)
     st.dataframe(df, use_container_width=True, hide_index=True)
+
+    _render_export_buttons(
+        df,
+        fig,
+        key_prefix="kd_customer",
+        file_stub="kinh_doanh_theo_khach_hang",
+        title="Doanh thu / Lãi lỗ theo khách hàng (toàn bộ, biểu đồ chỉ hiện top "
+        f"{len(top_df)})",
+        subtitle=_date_filter_subtitle(date_from, date_to),
+    )
 
 
 def _render_by_org(user_id: int, role_value: str, date_from, date_to) -> None:
@@ -271,6 +355,15 @@ def _render_by_org(user_id: int, role_value: str, date_from, date_to) -> None:
     st.plotly_chart(fig, use_container_width=True)
     st.dataframe(agg, use_container_width=True, hide_index=True)
 
+    _render_export_buttons(
+        agg,
+        fig,
+        key_prefix="kd_org",
+        file_stub="kinh_doanh_theo_khoi_phong_nv",
+        title=f"Doanh thu / Lãi lỗ theo {level}",
+        subtitle=_date_filter_subtitle(date_from, date_to),
+    )
+
 
 def _render_trend(user_id: int, role_value: str, date_from, date_to) -> None:
     """Tab "Xu hướng theo thời gian" — Doanh thu/Lãi lỗ gộp theo Tháng hoặc
@@ -315,6 +408,15 @@ def _render_trend(user_id: int, role_value: str, date_from, date_to) -> None:
     )
     st.plotly_chart(fig, use_container_width=True)
     st.dataframe(df, use_container_width=True, hide_index=True)
+
+    _render_export_buttons(
+        df,
+        fig,
+        key_prefix="kd_trend",
+        file_stub="kinh_doanh_xu_huong",
+        title=f"Xu hướng Doanh thu / Lãi lỗ theo {granularity_label.lower()}",
+        subtitle=_date_filter_subtitle(date_from, date_to),
+    )
 
 
 def main() -> None:

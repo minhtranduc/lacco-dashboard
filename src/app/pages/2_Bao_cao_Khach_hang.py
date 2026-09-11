@@ -19,12 +19,16 @@ chứa `{"user_id", "username", "role"}`), không tự đặt quy ước session
 
 from __future__ import annotations
 
+from datetime import date
+from typing import Any
+
 import pandas as pd
 import plotly.express as px
 import streamlit as st
 from loguru import logger
 
 from src.auth.scope import DataScope, compute_data_scope
+from src.services import export_utils
 from src.services.db_connection import get_engine
 from src.services.report_khach_hang import (
     get_classification_trend,
@@ -71,6 +75,50 @@ def _cached_source_distribution(user_id: int, role_value: str) -> pd.DataFrame:
 
 def _render_login_required() -> None:
     st.warning("Vui lòng đăng nhập ở trang chính (Home) trước khi xem báo cáo này.")
+
+
+def _render_export_buttons(
+    df: pd.DataFrame, fig: Any, *, key_prefix: str, file_stub: str, title: str
+) -> None:
+    """2 nút xuất Excel/PDF cho 1 báo cáo con (VIỆC 3, bước 6.1) — dùng
+    đúng `df`/`fig` đã tính sẵn ở hàm `_render_*` gọi hàm này, KHÔNG truy
+    vấn DB mới. Không bọc `@st.cache_data` (không truy vấn DB, không cần
+    thiết — CLAUDE.md mục 6). Nút PDF tách 2 bước (bấm tạo rồi mới hiện nút
+    tải) thay vì gọi `build_pdf_report_bytes` trực tiếp trong `data=` —
+    Streamlit đánh giá lại `data=` mỗi lần rerun trang, gọi trực tiếp sẽ tốn
+    kaleido render chart lại ở MỌI lần rerun (đã kiểm chứng thật, xem báo
+    cáo bước 6.1)."""
+    col_excel, col_pdf = st.columns(2)
+    today_str = date.today().isoformat()
+
+    with col_excel:
+        st.download_button(
+            "⬇️ Xuất Excel",
+            data=export_utils.dataframe_to_excel_bytes(
+                df, sheet_name=key_prefix[:31], title=title
+            ),
+            file_name=f"{file_stub}_{today_str}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key=f"{key_prefix}_export_xlsx",
+        )
+
+    with col_pdf:
+        if st.button("⬇️ Xuất PDF", key=f"{key_prefix}_export_pdf_btn"):
+            try:
+                pdf_bytes = export_utils.build_pdf_report_bytes(df, fig, title=title)
+            except RuntimeError as exc:
+                st.error(f"Không thể tạo file PDF: {exc}")
+                logger.error(
+                    "Xuất PDF lỗi tại '{}' (title='{}'): {}", key_prefix, title, exc
+                )
+            else:
+                st.download_button(
+                    "Tải file PDF",
+                    data=pdf_bytes,
+                    file_name=f"{file_stub}_{today_str}.pdf",
+                    mime="application/pdf",
+                    key=f"{key_prefix}_export_pdf_dl",
+                )
 
 
 def _render_classification_trend(df: pd.DataFrame) -> None:
@@ -122,12 +170,17 @@ def _render_classification_trend(df: pd.DataFrame) -> None:
     )
     st.plotly_chart(fig, use_container_width=True)
 
+    display_df = pivot.rename(columns={"snapshot_date": "Mốc snapshot"})
     with st.expander("Xem dữ liệu chi tiết"):
-        st.dataframe(
-            pivot.rename(columns={"snapshot_date": "Mốc snapshot"}),
-            use_container_width=True,
-            hide_index=True,
-        )
+        st.dataframe(display_df, use_container_width=True, hide_index=True)
+
+    _render_export_buttons(
+        display_df,
+        fig,
+        key_prefix="kh_classification",
+        file_stub="khach_hang_phan_loai_abc",
+        title="Tăng giảm loại khách hàng A/B/C theo thời gian",
+    )
 
 
 def _render_source_distribution(df: pd.DataFrame) -> None:
@@ -152,14 +205,19 @@ def _render_source_distribution(df: pd.DataFrame) -> None:
     fig.update_traces(textposition="outside")
     st.plotly_chart(fig, use_container_width=True)
 
+    display_df = df_sorted.sort_values("so_luong_kh", ascending=False).rename(
+        columns={"source": "Nguồn", "so_luong_kh": "Số lượng khách hàng"}
+    )
     with st.expander("Xem dữ liệu chi tiết"):
-        st.dataframe(
-            df_sorted.sort_values("so_luong_kh", ascending=False).rename(
-                columns={"source": "Nguồn", "so_luong_kh": "Số lượng khách hàng"}
-            ),
-            use_container_width=True,
-            hide_index=True,
-        )
+        st.dataframe(display_df, use_container_width=True, hide_index=True)
+
+    _render_export_buttons(
+        display_df,
+        fig,
+        key_prefix="kh_source",
+        file_stub="khach_hang_theo_nguon",
+        title="Phân bố khách hàng theo nguồn",
+    )
 
 
 def main() -> None:

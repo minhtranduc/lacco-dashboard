@@ -24,6 +24,7 @@ KHÔNG dùng biến global.
 from __future__ import annotations
 
 from datetime import date
+from typing import Any
 
 import pandas as pd
 import plotly.express as px
@@ -31,7 +32,7 @@ import streamlit as st
 from loguru import logger
 
 from src.auth.scope import DataScope, compute_data_scope
-from src.services import report_don_hang
+from src.services import export_utils, report_don_hang
 from src.services.db_connection import get_engine
 
 st.set_page_config(page_title="LACCO Dashboard — Báo cáo Đơn hàng", layout="wide")
@@ -93,6 +94,66 @@ def _cached_status_trend(
     )
 
 
+def _date_filter_subtitle(date_from: date | None, date_to: date | None) -> str | None:
+    """Mô tả bộ lọc khoảng ngày đang áp dụng, dùng làm `subtitle` cho PDF —
+    trả `None` nếu không lọc."""
+    if date_from is None and date_to is None:
+        return None
+    tu = date_from.strftime("%d/%m/%Y") if date_from else "..."
+    den = date_to.strftime("%d/%m/%Y") if date_to else "..."
+    return f"Lọc theo order_date: từ {tu} đến {den}"
+
+
+def _render_export_buttons(
+    df: pd.DataFrame,
+    fig: Any,
+    *,
+    key_prefix: str,
+    file_stub: str,
+    title: str,
+    subtitle: str | None = None,
+) -> None:
+    """2 nút xuất Excel/PDF cho 1 báo cáo con (VIỆC 3, bước 6.1) — dùng
+    đúng `df`/`fig` đã tính sẵn ở hàm `_render_*` gọi hàm này, KHÔNG truy
+    vấn DB mới. Không bọc `@st.cache_data` (CLAUDE.md mục 6). Nút PDF tách
+    2 bước (bấm tạo rồi mới hiện nút tải) — Streamlit đánh giá lại `data=`
+    mỗi lần rerun trang, gọi trực tiếp sẽ tốn kaleido render lại ở MỌI lần
+    rerun (đã kiểm chứng thật, xem báo cáo bước 6.1)."""
+    col_excel, col_pdf = st.columns(2)
+    today_str = date.today().isoformat()
+
+    with col_excel:
+        st.download_button(
+            "⬇️ Xuất Excel",
+            data=export_utils.dataframe_to_excel_bytes(
+                df, sheet_name=key_prefix[:31], title=title
+            ),
+            file_name=f"{file_stub}_{today_str}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key=f"{key_prefix}_export_xlsx",
+        )
+
+    with col_pdf:
+        if st.button("⬇️ Xuất PDF", key=f"{key_prefix}_export_pdf_btn"):
+            try:
+                pdf_bytes = export_utils.build_pdf_report_bytes(
+                    df, fig, title=title, subtitle=subtitle
+                )
+            except RuntimeError as exc:
+                st.error(f"Không thể tạo file PDF: {exc}")
+                logger.error(
+                    "Xuất PDF lỗi tại '{}' (title='{}'): {}", key_prefix, title, exc
+                )
+            else:
+                st.download_button(
+                    "Tải file PDF",
+                    data=pdf_bytes,
+                    file_name=f"{file_stub}_{today_str}.pdf",
+                    mime="application/pdf",
+                    key=f"{key_prefix}_export_pdf_dl",
+                )
+
+
 def _render_date_filters() -> tuple[date | None, date | None]:
     """Vẽ 2 ô lọc khoảng ngày (`order_date`), tuỳ chọn — mặc định không
     giới hạn (None, None) để không ẩn dữ liệu ngoài ý muốn khi mới vào
@@ -138,6 +199,15 @@ def _render_order_status(user_id: int, role_value: str, date_from, date_to) -> N
     st.plotly_chart(fig_bar, use_container_width=True)
     st.dataframe(df, use_container_width=True, hide_index=True)
 
+    _render_export_buttons(
+        df,
+        fig_bar,
+        key_prefix="dh_status",
+        file_stub="don_hang_tinh_trang",
+        title="Số lượng đơn theo tình trạng (status)",
+        subtitle=_date_filter_subtitle(date_from, date_to),
+    )
+
     st.divider()
     st.subheader("Xu hướng theo thời gian")
     granularity_label = st.radio(
@@ -173,6 +243,15 @@ def _render_order_status(user_id: int, role_value: str, date_from, date_to) -> N
     st.plotly_chart(fig_trend, use_container_width=True)
     st.dataframe(trend_df, use_container_width=True, hide_index=True)
 
+    _render_export_buttons(
+        trend_df,
+        fig_trend,
+        key_prefix="dh_status_trend",
+        file_stub="don_hang_xu_huong_tinh_trang",
+        title=f"Cơ cấu tình trạng đơn hàng theo {granularity_label.lower()}",
+        subtitle=_date_filter_subtitle(date_from, date_to),
+    )
+
 
 def _render_invoice_status(user_id: int, role_value: str, date_from, date_to) -> None:
     """Tab "Tình trạng xuất hoá đơn" — đếm theo TỪNG giá trị `invoice_
@@ -201,6 +280,15 @@ def _render_invoice_status(user_id: int, role_value: str, date_from, date_to) ->
     )
     st.plotly_chart(fig, use_container_width=True)
     st.dataframe(df, use_container_width=True, hide_index=True)
+
+    _render_export_buttons(
+        df,
+        fig,
+        key_prefix="dh_invoice",
+        file_stub="don_hang_tinh_trang_hoa_don",
+        title="Số lượng đơn theo tình trạng xuất hoá đơn (invoice_status)",
+        subtitle=_date_filter_subtitle(date_from, date_to),
+    )
 
 
 def main() -> None:

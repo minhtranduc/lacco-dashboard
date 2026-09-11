@@ -27,6 +27,7 @@ KHÔNG dùng biến global.
 from __future__ import annotations
 
 from datetime import date
+from typing import Any
 
 import pandas as pd
 import plotly.express as px
@@ -35,7 +36,7 @@ from loguru import logger
 
 from src.auth.scope import DataScope, compute_data_scope
 from src.db.models.enums import UserRole
-from src.services import report_cong_no
+from src.services import export_utils, report_cong_no
 from src.services.db_connection import get_engine
 
 st.set_page_config(page_title="LACCO Dashboard — Báo cáo Công nợ", layout="wide")
@@ -88,6 +89,53 @@ def _cached_mismatch_check(user_id: int, role_value: str) -> pd.DataFrame:
     return report_cong_no.check_division_department_mismatch()
 
 
+def _render_export_buttons(
+    df: pd.DataFrame, fig: Any, *, key_prefix: str, file_stub: str, title: str
+) -> None:
+    """2 nút xuất Excel/PDF cho 1 báo cáo con (VIỆC 3, bước 6.1) — dùng
+    đúng `df`/`fig` đã tính sẵn ở hàm `_render_*` gọi hàm này, KHÔNG truy
+    vấn DB mới. Không bọc `@st.cache_data` (CLAUDE.md mục 6). Nút PDF tách
+    2 bước (bấm tạo rồi mới hiện nút tải) — Streamlit đánh giá lại `data=`
+    mỗi lần rerun trang, gọi trực tiếp sẽ tốn kaleido render lại ở MỌI lần
+    rerun (đã kiểm chứng thật, xem báo cáo bước 6.1). Không có bộ lọc ngày
+    trên trang này (aging tính động theo `date.today()`, xem docstring đầu
+    file) nên `subtitle` chỉ ghi rõ mốc ngày tính aging."""
+    col_excel, col_pdf = st.columns(2)
+    today_str = date.today().isoformat()
+    subtitle = f"Aging tính động theo ngày {date.today():%d/%m/%Y}"
+
+    with col_excel:
+        st.download_button(
+            "⬇️ Xuất Excel",
+            data=export_utils.dataframe_to_excel_bytes(
+                df, sheet_name=key_prefix[:31], title=title
+            ),
+            file_name=f"{file_stub}_{today_str}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key=f"{key_prefix}_export_xlsx",
+        )
+
+    with col_pdf:
+        if st.button("⬇️ Xuất PDF", key=f"{key_prefix}_export_pdf_btn"):
+            try:
+                pdf_bytes = export_utils.build_pdf_report_bytes(
+                    df, fig, title=title, subtitle=subtitle
+                )
+            except RuntimeError as exc:
+                st.error(f"Không thể tạo file PDF: {exc}")
+                logger.error(
+                    "Xuất PDF lỗi tại '{}' (title='{}'): {}", key_prefix, title, exc
+                )
+            else:
+                st.download_button(
+                    "Tải file PDF",
+                    data=pdf_bytes,
+                    file_name=f"{file_stub}_{today_str}.pdf",
+                    mime="application/pdf",
+                    key=f"{key_prefix}_export_pdf_dl",
+                )
+
+
 def _render_overview(user_id: int, role_value: str) -> None:
     df = _cached_aging_summary(user_id, role_value)
     if df.empty:
@@ -120,6 +168,14 @@ def _render_overview(user_id: int, role_value: str) -> None:
     fig.update_traces(texttemplate="%{text} khoản", textposition="outside")
     st.plotly_chart(fig, use_container_width=True)
     st.dataframe(df, use_container_width=True, hide_index=True)
+
+    _render_export_buttons(
+        df,
+        fig,
+        key_prefix="cn_overview",
+        file_stub="cong_no_tong_quan_aging",
+        title="Dư nợ theo nhóm tuổi nợ (aging bucket)",
+    )
 
 
 def _render_by_org(user_id: int, role_value: str) -> None:
@@ -173,6 +229,16 @@ def _render_by_org(user_id: int, role_value: str) -> None:
     st.dataframe(totals_by_group, use_container_width=True, hide_index=True)
     with st.expander("Xem chi tiết theo nhóm tuổi nợ"):
         st.dataframe(agg, use_container_width=True, hide_index=True)
+
+    # Xuất `agg` (có cột aging_bucket) chứ không phải `totals_by_group` —
+    # đây là dữ liệu khớp với chart (stacked bar phân theo aging_bucket).
+    _render_export_buttons(
+        agg,
+        fig,
+        key_prefix="cn_org",
+        file_stub="cong_no_theo_khoi_phong_nv",
+        title=f"Dư nợ theo {level}, phân theo nhóm tuổi nợ",
+    )
 
 
 def _render_data_quality_check() -> None:
