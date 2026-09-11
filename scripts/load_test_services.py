@@ -53,11 +53,15 @@ _SLEEP_BETWEEN_CALLS = (2.0, 3.0)  # giây, random.uniform mỗi vòng lặp
 # nhóm báo cáo — KHÔNG phải toàn bộ hàm, đúng phạm vi bước 6.2 (chẩn đoán
 # tải, không phải test coverage đầy đủ từng hàm).
 _REPRESENTATIVE_FUNCTIONS: dict[str, callable] = {
-    "kinh_doanh.get_revenue_profit_by_service": report_kinh_doanh.get_revenue_profit_by_service,
+    "kinh_doanh.get_revenue_profit_by_service": (
+        report_kinh_doanh.get_revenue_profit_by_service
+    ),
     "khach_hang.get_classification_trend": report_khach_hang.get_classification_trend,
     "don_hang.get_order_status_counts": report_don_hang.get_order_status_counts,
     "pricing.get_win_rate_by_org": report_pricing.get_win_rate_by_org,
-    "chi_phi.get_cost_vs_budget_by_division": report_chi_phi.get_cost_vs_budget_by_division,
+    "chi_phi.get_cost_vs_budget_by_division": (
+        report_chi_phi.get_cost_vs_budget_by_division
+    ),
     "cong_no.get_debt_aging_summary": report_cong_no.get_debt_aging_summary,
 }
 
@@ -97,7 +101,9 @@ def _worker(user_id: int, scope: DataScope, engine, end_time: float) -> WorkerRe
         except Exception as exc:  # noqa: BLE001 - script chẩn đoán, cần bắt MỌI loại lỗi để đếm
             error = f"{type(exc).__name__}: {exc}"
         elapsed = time.perf_counter() - t0
-        result.records.append(CallRecord(function_name=name, elapsed_seconds=elapsed, error=error))
+        result.records.append(
+            CallRecord(function_name=name, elapsed_seconds=elapsed, error=error)
+        )
         time.sleep(random.uniform(*_SLEEP_BETWEEN_CALLS))
     return result
 
@@ -118,7 +124,9 @@ def main() -> None:
 
     real_user_ids = _fetch_user_ids(engine, _TARGET_CONCURRENT_USERS)
     if not real_user_ids:
-        raise RuntimeError("Không tìm thấy user nào trong bảng users — không thể chạy load test.")
+        raise RuntimeError(
+            "Không tìm thấy user nào trong bảng users — không thể chạy load test."
+        )
 
     logger.info(
         "load_test_services: tìm thấy {} user thật trong DB (cần {}).",
@@ -158,8 +166,14 @@ def main() -> None:
         for rec in wr.records:
             per_function[rec.function_name].append(rec)
 
-    print(f"\nSố user thật trong DB: {len(real_user_ids)} (mục tiêu {_TARGET_CONCURRENT_USERS})")
-    print(f"Thời lượng chạy: {_DURATION_SECONDS}s | Số luồng đồng thời: {_TARGET_CONCURRENT_USERS}\n")
+    print(
+        f"\nSố user thật trong DB: {len(real_user_ids)} "
+        f"(mục tiêu {_TARGET_CONCURRENT_USERS})"
+    )
+    print(
+        f"Thời lượng chạy: {_DURATION_SECONDS}s | "
+        f"Số luồng đồng thời: {_TARGET_CONCURRENT_USERS}\n"
+    )
 
     header = (
         f"{'Hàm':<45}{'Số lần':>8}{'Min(s)':>9}{'Max(s)':>9}"
@@ -187,7 +201,11 @@ def main() -> None:
                 f"{len(errors):>6}"
             )
         else:
-            row = f"{name:<45}{len(records):>8}{'—':>9}{'—':>9}{'—':>9}{'—':>9}{len(errors):>6}"
+            dash = "—"
+            row = (
+                f"{name:<45}{len(records):>8}{dash:>9}{dash:>9}"
+                f"{dash:>9}{dash:>9}{len(errors):>6}"
+            )
         print(row)
 
     print(f"\nTổng số lần gọi: {total_calls} | Tổng số lỗi: {total_errors}")
