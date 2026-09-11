@@ -32,6 +32,8 @@ Chạy 60 giây, 20 luồng đồng thời, tổng 481 lượt gọi, **0 lỗi*
 
 Toàn bộ 6 hàm có p95 ≤ 0.011s — thoải mái dưới ngưỡng 3 giây (dư khoảng 270 lần) — **ĐẠT** tiêu chí "chịu tải 20 người dùng đồng thời không lỗi". Không cần sửa cấu hình connection pool (giữ nguyên mặc định `pool_size=5`/`max_overflow=10`) vì chưa có dấu hiệu nghẽn thật — tránh tối ưu sớm khi chưa cần thiết.
 
+Commit `05a26e84` (sau khi sửa lỗi lint từ 2 commit trước bị CI chặn — xem bảng vấn đề bên dưới, #3), push lên `main`, CI `lint-and-test` xanh.
+
 **Lưu ý quan trọng khi đọc kết quả này:** dữ liệu test là dữ liệu mẫu tổng hợp (synthetic) quy mô nhỏ dùng cho case study, không phải khối lượng dữ liệu thật của LACCO khi vận hành lâu dài. Kết quả này xác nhận đúng "cơ chế đồng thời hoạt động ổn định, không có lỗi pool/threading" — chưa xác nhận hiệu năng ở khối lượng dữ liệu lớn hơn nhiều lần. Nên test lại 1 lần với dữ liệu gần thực tế hơn (hoặc theo dõi thời gian phản hồi thật sau khi vận hành 1 thời gian) trước hoặc trong giai đoạn go-live.
 
 ## Vấn đề phát sinh trong lúc test
@@ -40,13 +42,15 @@ Toàn bộ 6 hàm có p95 ≤ 0.011s — thoải mái dưới ngưỡng 3 giây 
 |---|---|---|
 | 1 | Dịch vụ Windows `MySQL80` đang ở trạng thái Stopped khi bắt đầu test | Khởi động lại để chạy test, giữ nguyên trạng thái chạy sau đó (cần cho việc dev tiếp theo) — nên kiểm tra dịch vụ này được đặt tự khởi động cùng Windows trước khi triển khai thật ở bước 7.2 |
 | 2 | Chạy `python scripts/load_test_services.py` trực tiếp không tự có `src` trên `sys.path` (Python mặc định thêm thư mục chứa script, không phải thư mục gốc repo) | Thêm `sys.path.insert(...)` ngay trong script để tự chạy độc lập được, không cần set `PYTHONPATH` tay |
+| 3 | Bỏ sót chạy `ruff check` trước khi commit (vi phạm đúng quy ước CLAUDE.md mục 4) — 2 commit đầu (`b678c5e9`, `47c9caa0`) fail CI ngay ở bước lint, chưa tới bước test | Tự phát hiện qua CI đỏ trên GitHub Actions (không phải phát hiện thủ công trước khi push), sửa lỗi lint rồi chạy lại `ruff check` trước khi commit tiếp; commit sửa `05a26e84` chạy lại script xác nhận hành vi không đổi (488 lượt gọi, 0 lỗi — tương đương kết quả đo ở trên, chênh lệch số lượt là do biến động thời gian nghỉ ngẫu nhiên giữa các vòng lặp, không phải do sửa lint làm đổi hành vi), CI xanh trở lại |
 
 ## Bài học rút ra
 
 - **"Chịu tải 20 người dùng" không có nghĩa như nhau ở mọi loại ứng dụng** — với 1 ứng dụng Streamlit nội bộ, câu hỏi quan trọng không phải "bao nhiêu request/giây" (kiểu web app thông thường) mà là "connection pool DB có đủ cho số phiên đồng thời không, và code có giữ connection lâu hơn cần thiết không" — chọn đúng tầng để đo (Service/DB thay vì HTTP) quan trọng hơn chọn đúng công cụ.
 - **Kết quả "quá nhanh, quá tốt" cần được diễn giải đúng ngữ cảnh, không mặc nhiên coi là hiệu năng production** — dữ liệu mẫu nhỏ khiến mọi truy vấn đều rất nhanh; đây là bằng chứng "cơ chế đúng", không phải bằng chứng "hiệu năng ở quy mô thật", 2 điều này cần được phân biệt rõ khi báo cáo lên Ban Lãnh đạo.
 - **Không tối ưu khi chưa có vấn đề thật** — dù có thể tăng `pool_size` "cho chắc", việc này không cần thiết khi số liệu đã dư thừa an toàn 270 lần so với ngưỡng; thêm cấu hình không có bằng chứng cần thiết chỉ làm tăng độ phức tạp phải bảo trì sau này.
+- **`ruff check` trước khi commit không phải bước tuỳ chọn** — dù đã ghi rõ trong CLAUDE.md mục 4, bước này vẫn bị bỏ sót 2 lần liên tiếp trong chính phiên làm việc tạo ra tài liệu này; sai sót này vô hại (CI chặn kịp thời, không lọt lên `main`) nhưng tốn thêm 2 vòng sửa/push — nhắc lại để các bước sau không lặp lại.
 
 ## Kết quả
 
-Bước 6.2 hoàn thành: xác nhận Dashboard đạt tiêu chí "chịu tải 20 người dùng đồng thời không lỗi" ở tầng Service/DB (481 lượt gọi, 0 lỗi, p95 tối đa 0.011s so với ngưỡng 3s) — không cần thay đổi cấu hình. Rủi ro cần theo dõi thêm: kết quả dựa trên dữ liệu mẫu quy mô nhỏ, nên xác nhận lại khi có khối lượng dữ liệu gần thực tế hơn trước khi go-live (bước 7.2).
+Bước 6.2 hoàn thành: xác nhận Dashboard đạt tiêu chí "chịu tải 20 người dùng đồng thời không lỗi" ở tầng Service/DB (481 lượt gọi, 0 lỗi, p95 tối đa 0.011s so với ngưỡng 3s; xác nhận lại lần 2 sau khi sửa lint với 488 lượt, hành vi không đổi) — không cần thay đổi cấu hình, commit `05a26e84`, CI xanh. Rủi ro cần theo dõi thêm: kết quả dựa trên dữ liệu mẫu quy mô nhỏ, nên xác nhận lại khi có khối lượng dữ liệu gần thực tế hơn trước khi go-live (bước 7.2).
