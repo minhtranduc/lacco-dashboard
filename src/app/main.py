@@ -24,6 +24,11 @@ from loguru import logger
 from src.auth.authentication import authenticate_and_log
 from src.auth.scope import DataScope, compute_data_scope
 from src.services.db_connection import get_engine
+from src.services.monitoring import init_sentry
+
+# Khởi tạo Sentry TRƯỚC khi bất kỳ phần nào khác của app chạy (bước 6.3,
+# HD-20) — để bắt được lỗi runtime phát sinh ngay từ các dòng đầu tiên.
+init_sentry()
 
 st.set_page_config(page_title="LACCO Dashboard — Demo RBAC (bước 3.1)", layout="wide")
 
