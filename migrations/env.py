@@ -27,10 +27,21 @@ target_metadata = Base.metadata
 # Không đi qua config.set_main_option()/alembic.ini: ConfigParser diễn giải
 # ký tự "%" (xuất hiện sau khi url-encode mật khẩu) như cú pháp interpolation
 # và ném lỗi — nên engine được tạo trực tiếp bằng create_engine() bên dưới.
+#
+# Bước 7.1 Fix B (least-privilege): Alembic cần quyền DDL (CREATE/ALTER/
+# DROP/INDEX/REFERENCES) mà tài khoản app runtime (MYSQL_USER, dùng cho
+# `src/services/db_connection.py`) KHÔNG còn có sau khi tách quyền — ưu
+# tiên đọc MIGRATE_MYSQL_USER/MIGRATE_MYSQL_PASSWORD (tài khoản migration
+# riêng) nếu có, fallback về MYSQL_USER/MYSQL_PASSWORD nếu môi trường nào
+# đó chưa set 2 biến mới (tương thích ngược, KHÔNG bắt buộc đổi ngay).
 load_dotenv()
+_MIGRATE_USER = os.environ.get("MIGRATE_MYSQL_USER") or os.environ["MYSQL_USER"]
+_MIGRATE_PASSWORD = (
+    os.environ.get("MIGRATE_MYSQL_PASSWORD") or os.environ["MYSQL_PASSWORD"]
+)
 DB_URL = (
-    f"mysql+mysqlconnector://{quote_plus(os.environ['MYSQL_USER'])}:"
-    f"{quote_plus(os.environ['MYSQL_PASSWORD'])}@{os.environ['MYSQL_HOST']}:"
+    f"mysql+mysqlconnector://{quote_plus(_MIGRATE_USER)}:"
+    f"{quote_plus(_MIGRATE_PASSWORD)}@{os.environ['MYSQL_HOST']}:"
     f"{os.environ['MYSQL_PORT']}/{os.environ['MYSQL_DATABASE']}"
 )
 
