@@ -7,6 +7,12 @@ MySQL vẫn đọc trực tiếp qua `os.environ` trong `db_connection.py` (xem
 không refactor lại `db_connection.py` sang class này (ngoài phạm vi bước
 6.3, xem báo cáo HD-20).
 
+Bổ sung `auth_cookie_key` ở bước 7.1 (test suite & security review cuối
+trước go-live) — thay cho việc `src/auth/authentication.py` đọc thẳng
+`os.environ.get("AUTH_COOKIE_KEY", ...)` với giá trị fallback hardcode
+(rủi ro bảo mật: chuỗi cố định lộ công khai trên GitHub). Xem
+`src/auth/authentication.py::_cookie_key()`.
+
 Theo CLAUDE.md mục 2 (tách lớp): đặt tại `src/services/` theo đúng tiền lệ
 đã có của `db_connection.py` (mối quan tâm hạ tầng/kết nối, không phải logic
 tính KPI nghiệp vụ) — không tạo layer "core" mới ngoài 4 layer đã chốt
@@ -30,6 +36,7 @@ class Settings(BaseSettings):
 
     sentry_dsn: str | None = None
     app_environment: str = "development"
+    auth_cookie_key: str | None = None
 
 
 settings = Settings()

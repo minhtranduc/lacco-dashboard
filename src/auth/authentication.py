@@ -34,7 +34,7 @@ hợp lệ để tham chiếu) — trường hợp này chỉ log qua Loguru, kh
 
 from __future__ import annotations
 
-import os
+import secrets
 from dataclasses import dataclass
 
 import streamlit_authenticator as stauth
@@ -43,18 +43,74 @@ from loguru import logger
 from src.auth.hashing import verify_password
 from src.db.models.enums import UserRole
 from src.services import auth_service
+from src.services.config import Settings
+from src.services.config import settings as _default_settings
 from src.services.db_connection import get_engine
 
 COOKIE_NAME = "lacco_dashboard_auth"
-# Cookie key mặc định CHỈ dùng cho môi trường dev/demo cục bộ. Nếu triển
-# khai thật, đặt biến môi trường AUTH_COOKIE_KEY trong .env — KHÔNG tự ý
-# thêm biến này vào .env trong phạm vi bước 3.1 (ngoài phạm vi nhiệm vụ đã
-# giao, xem chỉ dẫn "KHÔNG tự ý đổi .env").
-_DEV_FALLBACK_COOKIE_KEY = "lacco-dashboard-dev-only-cookie-key"
+
+# Cache cookie key sinh ngẫu nhiên cho môi trường dev/demo (khi KHÔNG có
+# AUTH_COOKIE_KEY trong .env) — sinh đúng 1 lần cho mỗi lần chạy process
+# (KHÔNG hardcode chuỗi cố định — trước bước 7.1, giá trị fallback là 1
+# chuỗi tĩnh lộ công khai trên GitHub, rủi ro bảo mật đã ghi nhận ở Tuần
+# 5/6). Restart process (VD `streamlit run` lại) sẽ sinh key mới -> cookie
+# cũ mất hiệu lực, chấp nhận được cho dev/demo, KHÔNG chấp nhận được cho
+# production (xem nhánh raise RuntimeError bên dưới).
+_dev_cookie_key_cache: str | None = None
 
 
-def _cookie_key() -> str:
-    return os.environ.get("AUTH_COOKIE_KEY", _DEV_FALLBACK_COOKIE_KEY)
+def _cookie_key(app_settings: Settings | None = None) -> str:
+    """Trả về cookie key dùng để ký cookie phiên đăng nhập
+    (`streamlit_authenticator`).
+
+    3 nhánh (bước 7.1, Fix A — thay cho fallback hardcode cũ):
+    1. `app_settings.auth_cookie_key` có giá trị (đọc từ `.env`, xem
+       `.env.example`) -> dùng trực tiếp, ổn định qua các lần restart.
+    2. Không có key VÀ `app_settings.app_environment == "production"` ->
+       từ chối khởi động (`RuntimeError`) — KHÔNG được chạy production với
+       cookie key công khai/ngẫu nhiên không lưu lại.
+    3. Không có key VÀ môi trường khác "production" (dev/demo) -> sinh
+       ngẫu nhiên bằng `secrets.token_hex(32)` đúng 1 lần cho tiến trình
+       hiện tại (cache ở `_dev_cookie_key_cache`), log 1 dòng cảnh báo.
+
+    Parameters
+    ----------
+    app_settings : Settings, optional
+        Cho phép truyền `Settings` riêng (dùng trong test) — mặc định dùng
+        singleton `settings` của `src.services.config`.
+
+    Raises
+    ------
+    RuntimeError
+        Nếu thiếu `AUTH_COOKIE_KEY` khi `app_environment == "production"`.
+    """
+    app_settings = app_settings or _default_settings
+
+    if app_settings.auth_cookie_key:
+        return app_settings.auth_cookie_key
+
+    if app_settings.app_environment == "production":
+        raise RuntimeError(
+            "Thiếu biến môi trường AUTH_COOKIE_KEY trong .env khi "
+            "APP_ENVIRONMENT=production — từ chối khởi động để tránh chạy "
+            "production với cookie key rỗng/công khai. Sinh 1 key bằng: "
+            'python -c "import secrets; print(secrets.token_hex(32))" '
+            "rồi đặt AUTH_COOKIE_KEY trong .env trước khi deploy (bước 7.2)."
+        )
+
+    global _dev_cookie_key_cache
+    if _dev_cookie_key_cache is None:
+        _dev_cookie_key_cache = secrets.token_hex(32)
+        logger.warning(
+            "AUTH_COOKIE_KEY chưa cấu hình trong .env (môi trường "
+            "'{}', không phải production) -> đã tự sinh ngẫu nhiên 1 cookie "
+            "key cho tiến trình hiện tại. Cookie đăng nhập sẽ MẤT HIỆU LỰC "
+            "mỗi khi restart app (phải đăng nhập lại) — chấp nhận được cho "
+            "dev/demo, đặt AUTH_COOKIE_KEY trong .env nếu muốn cookie giữ "
+            "được qua các lần restart.",
+            app_settings.app_environment,
+        )
+    return _dev_cookie_key_cache
 
 
 def build_credentials(engine=None) -> dict:
