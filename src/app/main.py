@@ -23,6 +23,7 @@ from loguru import logger
 
 from src.auth.authentication import authenticate_and_log
 from src.auth.scope import DataScope, compute_data_scope
+from src.db.models.enums import CustomerClassification, UserRole
 from src.services.db_connection import get_engine
 from src.services.monitoring import init_sentry
 
@@ -35,8 +36,54 @@ st.set_page_config(page_title="LACCO Dashboard — Demo RBAC (bước 3.1)", lay
 _SESSION_KEY = "lacco_auth_session"
 
 
+def _scope_to_plain_dict(scope: DataScope) -> dict:
+    """Chuyển `DataScope` sang dict chỉ chứa kiểu builtin thuần
+    (str/int/bool/None/tuple[int]) — KHÔNG còn tham chiếu instance của bất
+    kỳ class tự định nghĩa nào (`DataScope`, `UserRole`,
+    `CustomerClassification`). Dùng làm giá trị trả về của
+    `_cached_data_scope()` — xem lý do ở docstring hàm đó."""
+    return {
+        "user_id": scope.user_id,
+        "username": scope.username,
+        "role": scope.role.value,
+        "employee_id": scope.employee_id,
+        "department_id": scope.department_id,
+        "division_id": scope.division_id,
+        "classification_hint": (
+            scope.classification_hint.value
+            if scope.classification_hint is not None
+            else None
+        ),
+        "customer_ids": tuple(sorted(scope.customer_ids)),
+        "unrestricted": scope.unrestricted,
+        "description": scope.description,
+    }
+
+
+def _plain_dict_to_scope(data: dict) -> DataScope:
+    """Dựng lại `DataScope` từ dict thuần do `_cached_data_scope()` trả về
+    — nghịch đảo của `_scope_to_plain_dict()`."""
+    classification_hint = data["classification_hint"]
+    return DataScope(
+        user_id=data["user_id"],
+        username=data["username"],
+        role=UserRole(data["role"]),
+        employee_id=data["employee_id"],
+        department_id=data["department_id"],
+        division_id=data["division_id"],
+        classification_hint=(
+            CustomerClassification(classification_hint)
+            if classification_hint is not None
+            else None
+        ),
+        customer_ids=frozenset(data["customer_ids"]),
+        unrestricted=data["unrestricted"],
+        description=data["description"],
+    )
+
+
 @st.cache_data(ttl=60, show_spinner=False)
-def _cached_data_scope(user_id: int, role_value: str) -> DataScope:
+def _cached_data_scope(user_id: int, role_value: str) -> dict:
     """Cache phạm vi dữ liệu, TTL 60s để giảm truy vấn khi rerun liên tục.
 
     BẮT BUỘC nhận `user_id` VÀ `role_value` làm tham số (CLAUDE.md mục 6)
@@ -44,8 +91,31 @@ def _cached_data_scope(user_id: int, role_value: str) -> DataScope:
     phạm vi của user A không thể trả về cho user B dù cùng chạy trên 1
     server. `role_value` là phần đệm double-check, không phải nguồn khoá
     chính (khoá chính đã là `user_id`, duy nhất theo tài khoản).
+
+    *** TRẢ VỀ dict THUẦN, KHÔNG PHẢI `DataScope` (đã sửa, bước 7.1) ***
+    `st.cache_data` dùng `pickle` để lưu/đọc lại giá trị trả về. Lỗi thật
+    gặp khi test qua UI: `_pickle.PicklingError: Can't pickle <enum
+    'UserRole'>: it's not the same object as src.db.models.enums.UserRole`
+    — do file-watcher dev-mode của Streamlit reload lại module `src/db/
+    models/enums.py` khi phát hiện file trong `src/` thay đổi trên đĩa
+    (rerun sau khi sửa code khác), tạo ra 2 class `UserRole` không cùng
+    identity: 1 cái nằm trong `DataScope` đã tính trước đó, 1 cái mới sau
+    reload — `pickle` từ chối vì không xác định được đúng class để phục
+    hồi lại khi unpickle. Đây KHÔNG phải lỗi có thể sửa bằng `hash_funcs`
+    (tham số đó chỉ ảnh hưởng cách Streamlit HASH đối số đầu vào để làm
+    khoá cache, không ảnh hưởng cách SERIALIZE giá trị trả về — lỗi ở đây
+    xảy ra khi ghi giá trị trả về vào cache, không phải khi tính khoá).
+    Cách sửa triệt để: hàm này không còn trả về instance của bất kỳ class
+    tự định nghĩa nào (`DataScope`/`UserRole`/`CustomerClassification`) —
+    chỉ trả `dict` gồm str/int/bool/None/tuple[int], luôn pickle được bất
+    kể module có bị reload hay không. `_render_scope()` gọi
+    `_plain_dict_to_scope()` để dựng lại `DataScope` thật ngay sau khi lấy
+    từ cache — `DataScope` gốc trong `src/auth/scope.py` và
+    `compute_data_scope()` KHÔNG đổi, các nơi khác (test, service khác)
+    vẫn dùng `DataScope` như cũ.
     """
-    return compute_data_scope(user_id, engine=get_engine())
+    scope = compute_data_scope(user_id, engine=get_engine())
+    return _scope_to_plain_dict(scope)
 
 
 def _render_login_form() -> None:
@@ -80,7 +150,9 @@ def _render_login_form() -> None:
 def _render_scope(session: dict) -> None:
     st.success(f"Xin chào **{session['username']}** — vai trò **{session['role']}**.")
 
-    scope = _cached_data_scope(session["user_id"], session["role"])
+    scope = _plain_dict_to_scope(
+        _cached_data_scope(session["user_id"], session["role"])
+    )
 
     col1, col2, col3 = st.columns(3)
     col1.metric("Employee ID", scope.employee_id if scope.employee_id else "—")
