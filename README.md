@@ -33,8 +33,16 @@ python scripts/generate_synthetic_sample_data.py   # sinh dữ liệu mẫu (tu�
 streamlit run src/app/main.py
 ```
 
-Chạy test: `pytest tests/ -v --cov=src/auth`
+Chạy test: `pytest tests/ -v --cov=src`
 Lint: `ruff check src/ tests/ scripts/`
+
+## Deploy (Windows, chạy như dịch vụ nền)
+
+1. Tạo venv `.venv` (Python 3.12) và `pip install -r requirements.txt`.
+2. Tạo `.env` production từ `.env.example`: `APP_ENVIRONMENT=production`, `AUTH_COOKIE_KEY` sinh bằng `python -c "import secrets; print(secrets.token_hex(32))"`, tài khoản `lacco_app`/`lacco_migrate` (không dùng root). `.env` đã nằm trong `.gitignore`, không commit.
+3. `alembic upgrade head`.
+4. Mở PowerShell quyền Administrator: `scripts/deploy/install_service.ps1` — đăng ký Scheduled Task "LACCO Dashboard" chạy lúc khởi động máy (tài khoản SYSTEM), tự restart khi crash (vòng lặp trong `scripts/deploy/run_app.cmd`), đặt MySQL80 tự khởi động. Log tại `logs/streamlit.log`.
+5. Mở cổng 8501 trên Windows Firewall và cố định IP của máy.
 
 ## Tài liệu
 
