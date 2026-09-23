@@ -10,13 +10,13 @@ Set-Service -Name MySQL80 -StartupType Automatic
 $action = New-ScheduledTaskAction -Execute "cmd.exe" -Argument "/c `"$Repo\scripts\deploy\run_app.cmd`"" -WorkingDirectory $Repo
 $trigger = New-ScheduledTaskTrigger -AtStartup
 $trigger.Delay = "PT1M"   # cho MySQL + mang len truoc
-# Watchdog: neu cmd wrapper bi kill, task chay lai moi 5 phut (MultipleInstances IgnoreNew nen khong nhan doi khi dang chay)
-$watchdog = New-ScheduledTaskTrigger -Once -At (Get-Date) -RepetitionInterval (New-TimeSpan -Minutes 5)
+# Chi 1 trigger AtStartup. Khong dung trigger lap 5 phut: run_app.cmd da tu vong lap restart Streamlit khi crash,
+# con trigger lap lam Last Run Time/Last Result bi ghi de bang 0x800710E0 (IgnoreNew) -> khong doc duoc ket qua luc boot.
 $principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
 $settings = New-ScheduledTaskSettingsSet -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) `
     -ExecutionTimeLimit ([TimeSpan]::Zero) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
     -StartWhenAvailable -MultipleInstances IgnoreNew
 
-Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger @($trigger,$watchdog) -Principal $principal -Settings $settings -Force | Out-Null
+Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force | Out-Null
 Start-ScheduledTask -TaskName $TaskName
 Get-ScheduledTask -TaskName $TaskName | Select-Object TaskName, State
