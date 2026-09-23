@@ -1,7 +1,7 @@
 # CLAUDE.md — lacco-dashboard
 
 > File context gốc repo, giúp Claude Code hiểu dự án ngay từ đầu mỗi phiên, không cần giải thích lại từ đầu.
-> **Phiên bản:** v12 — 23/09/2026 | **Nguồn:** Tài liệu Kiến trúc Hệ thống, Kế hoạch triển khai Dashboard LACCO, Sheet 1 "Mẫu thu thập yêu cầu" (Bieu_mau_Yeu_cau_va_RACI_LACCO.xlsx — 12/14 dòng "Đã rõ", 2/14 chốt chuyển sang Giai đoạn 2). Bảng trạng thái yêu cầu chi tiết: xem `.claude/rules/trang-thai-yeu-cau.md`.
+> **Phiên bản:** v13 — 23/09/2026 | **Nguồn:** Tài liệu Kiến trúc Hệ thống, Kế hoạch triển khai Dashboard LACCO, Sheet 1 "Mẫu thu thập yêu cầu" (Bieu_mau_Yeu_cau_va_RACI_LACCO.xlsx — 12/14 dòng "Đã rõ", 2/14 chốt chuyển sang Giai đoạn 2). Bảng trạng thái yêu cầu chi tiết: xem `.claude/rules/trang-thai-yeu-cau.md`.
 > Phỏng vấn thu thập yêu cầu (bước 1.3) đã hoàn thành 17/08/2026. Chỉ còn 2 báo cáo ngoài phạm vi Giai đoạn 1: **CRM** (chưa có dữ liệu trên hệ thống) và **Dòng tiền** (nguồn AMIS chưa xác nhận) — cả hai đã chốt dời sang Giai đoạn 2, không dựng logic/schema cho 2 phần này ở Giai đoạn 1.
 
 ## 1. Bối cảnh dự án
@@ -36,6 +36,7 @@ lacco-dashboard/
 ├── .claude/agents/           # định nghĩa subagent chuyên biệt
 ├── .github/workflows/        # CI (lint + test tự động khi push/PR, từ Tuần 3, HD-14)
 └── scripts/
+    └── deploy/               # chạy production như dịch vụ nền trên Windows (từ bước 7.2, HD-22)
 ```
 
 Luồng dữ liệu: `Excel/CSV → Import → MySQL → SQLAlchemy → Pandas → Plotly → Streamlit → Browser`
@@ -69,7 +70,8 @@ Nguyên tắc bắt buộc: **không trộn lẫn 3 lớp** — code truy vấn 
 | Giám sát lỗi | Sentry SaaS free tier (đã chốt, không self-host) — `send_default_pii=False`, `include_local_variables=False`, `traces_sample_rate=0` bắt buộc (mục 6); bắc cầu Loguru→Sentry qua sink riêng, PHẢI tắt tường minh `LoguruIntegration` tự động của `sentry-sdk` (`disabled_integrations=[LoguruIntegration()]`) — mặc định SDK tự bật integration này khi thấy `loguru` đã cài, gây trùng event nếu không tắt (đã xác minh thật, xem HD-20) | Tuần 6 (bước 6.3) |
 | Export Excel | openpyxl (đã chốt, không dùng XlsxWriter) | Tuần 6 (bước 6.1) |
 | Export PDF | ReportLab (đã chốt thay WeasyPrint — tránh phụ thuộc cài GTK3 runtime riêng trên Windows Server, xem HD-18) | Tuần 6 (bước 6.1) |
-| Render ảnh chart Plotly cho PDF | kaleido (pin `==0.2.1` — bản `1.4.0` lỗi `BrowserFailedError` trên máy test) | Tuần 6 (bước 6.1) — **rủi ro môi trường đã ghi nhận (xem HD-18): cần khởi động Chrome headless ổn định, chưa xác nhận được trên máy dev hiện tại lẫn Windows Server thật, phải kiểm tra độc lập trước go-live (bước 7.2); tính năng có graceful fallback nên không chặn tiến độ** |
+| Render ảnh chart Plotly cho PDF | kaleido (pin `==0.2.1` — bản `1.4.0` lỗi `BrowserFailedError` trên máy test) | Tuần 6 (bước 6.1) — **rủi ro môi trường đã ghi nhận (xem HD-18): cần khởi động Chrome headless ổn định, đã kiểm tra thật trên máy production ở bước 7.2: kaleido treo (timeout 20 giây), fallback tạo PDF không chart hoạt động đúng. COO quyết định chấp nhận PDF không chart, hoãn nâng cấp kaleido 1.x (xem HD-22)** |
+| Chạy nền production | Windows Task Scheduler (có sẵn trong Windows, KHÔNG dùng NSSM — tránh thêm công cụ ngoài không có trong repo) + vòng lặp tự restart trong `scripts/deploy/run_app.cmd` | Tuần 7 (bước 7.2, xem HD-22) |
 
 **Không đổi framework nền** (Streamlit, SQLAlchemy) trong Giai đoạn 1 — quyết định đã cân nhắc trong Kế hoạch triển khai, tránh phát sinh thời gian học kiến trúc mới giữa lộ trình 8 tuần.
 
@@ -108,6 +110,29 @@ python scripts/generate_synthetic_sample_data.py
 # Demo import + validate Pandera vào MySQL "lacco", gồm cả ca lỗi cố ý (bước 2.4)
 python scripts/run_synthetic_import_demo.py
 ```
+
+**Production (từ bước 7.2, xem HD-22 và mục "Deploy" trong `README.md`):**
+
+- Địa chỉ truy cập: `http://192.168.1.248:8501` (static IP trên card Wi-Fi, ngoài dải DHCP router — COO đã xác nhận). App bind `0.0.0.0` nên đổi IP máy không cần sửa code; repo không hardcode IP ở đâu, giữ nguyên như vậy.
+- Máy production hiện là chính máy dev Windows 11 của COO, dùng chung MySQL local. `.env` production: `APP_ENVIRONMENT=production` (bắt buộc có `AUTH_COOKIE_KEY`, xem mục 6), app dùng tài khoản `lacco_app`, không dùng root. Sentry dùng chung DSN với dev, phân biệt bằng tag `environment`.
+
+```powershell
+# Đăng ký/cập nhật Scheduled Task "LACCO Dashboard" (PowerShell quyền Administrator, chạy lại nhiều lần vẫn an toàn)
+scripts\deploy\install_service.ps1
+
+# Kiểm tra app còn sống
+curl.exe http://192.168.1.248:8501/_stcore/health     # phải trả về "ok" (PowerShell 5.1: "curl" là alias của Invoke-WebRequest, dùng curl.exe)
+
+# Log production (không commit)
+Get-Content logs\streamlit.log -Tail 50
+```
+
+**Lưu ý vận hành production (đã gặp thật ở bước 7.2):**
+
+- "Restart on failure" (`RestartCount`/`RestartInterval`) của Task Scheduler KHÔNG chạy lại app khi process bị kill/crash — việc tự phục hồi do vòng lặp trong `run_app.cmd` đảm nhận. Không bỏ vòng lặp này với giả định Task Scheduler sẽ lo.
+- Task chỉ có đúng 1 trigger *At startup* (trễ 1 phút). KHÔNG thêm trigger lặp định kỳ: kết hợp với `MultipleInstances IgnoreNew`, trigger lặp sẽ ghi đè Last Result bằng `0x800710E0` và làm `schtasks /query` không còn phản ánh lần chạy lúc boot. Khi cần xác minh app đã tự khởi động, đối chiếu `logs\streamlit.log` + cây tiến trình (cha là Task Scheduler, user `SYSTEM`) + health check, không dựa riêng vào `schtasks`.
+- App production chạy trực tiếp từ thư mục repo này. Sửa code trong working copy hoặc `git checkout` sang nhánh khác có thể được Streamlit nạp vào phiên production ở lần tương tác kế tiếp — tránh để code dở dang trên nhánh đang chạy; khi có máy chủ riêng thì tách dev/prod.
+- Commit trên Windows PowerShell 5.1: message có dấu ngoặc kép bị tách sai tham số — dùng `git commit -F <file>` cho message dài.
 
 ## 6. RBAC & bảo mật — BẮT BUỘC, không thương lượng
 
@@ -171,3 +196,4 @@ Nếu nội dung sắp bị tóm tắt liên quan đến quyết định RBAC, b
 - **v10 (13/09/2026, bước 6.3):** Cập nhật sau khi hoàn thành bước 6.3 (cấu hình Sentry giám sát lỗi — HD-20). Phát hiện quan trọng khi làm: (1) prompt giao việc giả định đã có class Pydantic Settings, nhưng kiểm tra thật (`grep` toàn repo) cho thấy KHÔNG có — MySQL vẫn đọc `os.environ` trực tiếp trong `db_connection.py`; tạo mới `src/services/config.py` làm class Pydantic Settings đầu tiên, KHÔNG refactor lại `db_connection.py` (ngoài phạm vi); (2) `sentry-sdk` mặc định tự bật `LoguruIntegration` khi thấy `loguru` đã cài (`auto_enabling_integrations=True` là default), gây trùng event với sink tự viết — đã xác minh thật bằng dashboard sentry.io (3 issue thay vì 2 issue kỳ vọng) và xử lý bằng `disabled_integrations=[LoguruIntegration()]`, xác minh lại xác nhận hết trùng. 2 thay đổi trong CLAUDE.md: mục 3 — cập nhật dòng "Config/biến môi trường" (ghi rõ đây là lần đầu Pydantic Settings có code thật) và dòng "Giám sát lỗi" (chốt SaaS free tier, ghi rõ 4 tham số bảo mật bắt buộc + lưu ý tắt `LoguruIntegration`). Không sửa `.claude/rules/trang-thai-yeu-cau.md` hay `report-builder-agent.md` — bước này thuộc hạ tầng giám sát lỗi, không phát sinh quyết định công thức/RBAC báo cáo nào. Tuần 6 còn bước 6.4 (Review & nhật ký) trước khi đóng tuần hoàn toàn.
 - **v11 (23/09/2026, bước 7.1, chốt Test suite & security review cuối):** Cập nhật sau khi hoàn thành bước 7.1 — HD-21. 3 phần: (1) test suite cho 12 file trước đó 0% coverage (`src/services/`, `src/auth/admin_actions.py`), 175/175 pass, 88% coverage (commit `f04880c`); (2) Fix A — bỏ `_DEV_FALLBACK_COOKIE_KEY` hardcode public trên GitHub, thay bằng logic 3 nhánh: `AUTH_COOKIE_KEY` từ `.env` nếu có, bắt buộc set (raise `RuntimeError`) nếu `APP_ENVIRONMENT=production` mà thiếu, sinh ngẫu nhiên 1 lần/process kèm cảnh báo log nếu môi trường khác (commit `40bbce0`); (3) Fix B — phát hiện `MYSQL_USER=root` với `GRANT OPTION` trên `*.*` (gồm SUPER/SHUTDOWN/FILE/CREATE USER) dùng chung cho cả app runtime lẫn Alembic migration qua cùng biến môi trường; đã tách `lacco_app` (chỉ SELECT/INSERT/UPDATE/DELETE trên `lacco`, dùng cho app) và `lacco_migrate` (thêm CREATE/ALTER/DROP/INDEX/REFERENCES, chỉ dùng khi `alembic upgrade head`) — xác nhận qua `SHOW GRANTS`, không revoke quyền root trên MySQL (vẫn cần cho quản trị thủ công) (commit `954775a`). `qa-reviewer-agent` chạy 9/9 Pass trên 32 file. Phát sinh phụ khi test Fix B qua UI thật: bug `UnserializableReturnValueError` — `@st.cache_data` không pickle được khi trả về dataclass/enum tự định nghĩa và module bị Streamlit dev-mode reload giữa chừng; đã sửa (commit `be4b417`), ghi thành gotcha mới ở mục 6. Thay đổi trong CLAUDE.md: mục 6 — thêm gotcha `@st.cache_data`/pickle. Không sửa `.claude/rules/trang-thai-yeu-cau.md` hay `report-builder-agent.md` — bước 7.1 thuộc hạ tầng test/bảo mật, không phát sinh quyết định công thức/RBAC báo cáo mới. Bài học: 1 bug tưởng nhỏ (cache demo) phát hiện tình cờ khi test 1 fix bảo mật khác — nhắc lại giá trị của việc luôn test qua UI thật (không chỉ script/test tự động) trước khi đóng 1 bước, đặc biệt các bước có đụng đến `.env`/kết nối DB.
 - **v12 (23/09/2026, rà soát trước bước 7.2):** Phát hiện khi rà soát trước khi bắt đầu bước 7.2 (Deploy Windows Server) — mục 5 vẫn ghi lệnh `pytest` cũ từ v5 ("13 test cho `src/auth/`"), lỗi thời so với thực tế sau bước 7.1 (175 test, phủ cả `src/services/`). 1 thay đổi: mục 5 — cập nhật lệnh `pytest` đúng phạm vi hiện tại (`--cov=src` thay vì `--cov=src/auth`), ghi rõ mốc mở rộng (HD-13 → HD-21). Không sửa file `.claude/` nào — đây thuần là sửa lệnh tham khảo, không phải quyết định nghiệp vụ/RBAC mới. **Lưu ý tự phê bình:** bản v12 khi soạn lần đầu (qua Cowork) đã bị chèn SAI VỊ TRÍ — nằm trước v11 thay vì sau, lặp lại đúng lỗi thứ tự changelog đã từng gặp và tự nhận là "bài học" ở v9/v10 trước đây; CLI phát hiện và báo lại khi review diff, đã sửa lại đúng thứ tự tăng dần (v9 → v10 → v11 → v12) trong lần cập nhật này. Bài học (lặp lại, lần này phải nhớ thật): mỗi khi thêm 1 entry changelog mới, PHẢI đọc lại ít nhất 2 entry liền trước để xác nhận chèn đúng vị trí theo thứ tự thời gian tăng dần — không chỉ tìm-và-chèn-trước 1 chuỗi khớp đầu tiên tìm thấy.
+- **v13 (23/09/2026, bước 7.2 Deploy Windows):** Cập nhật sau khi hoàn thành bước 7.2 — HD-22. App production chạy như dịch vụ nền trên chính máy Windows 11 của COO tại `http://192.168.1.248:8501` (IP ban đầu `.117`, đổi sang `.248` sau khi COO kiểm tra dải DHCP router), qua Task Scheduler + vòng lặp tự restart trong `run_app.cmd` (commit `da9f7ca`), đã bỏ trigger lặp 5 phút thừa (commit `7b024c5`). Đã kiểm tra thật: kill-test (tự phục hồi ~25 giây), reboot test, MySQL80 tự khởi động, load test nhỏ đạt ngưỡng (485 lượt/60 giây, 0 lỗi, p95 12 ms). 3 thay đổi: (1) mục 2 — thêm `scripts/deploy/` vào cây thư mục; (2) mục 3 — cập nhật dòng `kaleido` (rủi ro đã xác nhận thật trên máy production, COO chấp nhận PDF không chart) và thêm dòng "Chạy nền production" (Task Scheduler, không dùng NSSM); (3) mục 5 — thêm phần Production (địa chỉ, `.env`, lệnh vận hành) và 4 lưu ý vận hành đã gặp thật (restart on failure không hoạt động, không thêm trigger lặp, máy dev kiêm prod, `git commit -F` trên PowerShell 5.1). Hoãn theo quyết định COO: nâng cấp kaleido 1.x; load test khối lượng lớn (chờ ước tính số đơn hàng/khách hàng). Không sửa file `.claude/` nào — bước 7.2 thuộc hạ tầng triển khai, không phát sinh quyết định công thức/RBAC báo cáo mới. Đã đọc lại entry v11 và v12 trước khi chèn, xác nhận v13 nằm cuối danh sách theo đúng thứ tự tăng dần.
