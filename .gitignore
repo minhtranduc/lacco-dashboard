@@ -216,3 +216,6 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Backup MySQL (buoc 7.3) - file .sql/.zip chua du lieu that, tuyet doi khong commit
+backups/
