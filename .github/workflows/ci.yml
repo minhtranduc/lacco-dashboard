@@ -8,12 +8,12 @@ on:
 
 jobs:
   lint-and-test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
@@ -24,4 +24,4 @@ jobs:
         run: ruff check src/ tests/ scripts/
 
       - name: Test (pytest, SQLite in-memory - khong can MySQL that)
-        run: pytest tests/ -v --cov=src/auth --cov-report=term-missing
+        run: pytest tests/ -v --cov=src --cov-report=term-missing
