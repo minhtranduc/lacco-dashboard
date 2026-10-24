@@ -44,6 +44,8 @@ from src.db.models.enums import UserRole
 from src.db.models.security import User
 from src.services.report_don_hang import (
     get_invoice_status_counts,
+    get_order_counts_by_customer,
+    get_order_counts_by_org,
     get_order_status_counts,
     get_order_status_trend,
 )
@@ -415,3 +417,151 @@ def test_get_order_status_trend_empty_scope_returns_empty_dataframe(db_engine):
 
     assert df.empty
     assert list(df.columns) == ["period", "status", "order_count"]
+
+
+# ---------------------------------------------------------------------------
+# get_order_counts_by_org
+# ---------------------------------------------------------------------------
+
+
+def test_get_order_counts_by_org_admin_counts_per_employee_including_huy(
+    db_engine, extra_status_orders
+):
+    """Admin thấy 1 dòng/nhân viên kèm Khối/Phòng — emp_user 3 đơn (gồm 1
+    đơn "Huỷ"), emp_manager 2, emp_outsider 2 (gồm 1 "Huỷ"); tổng 7 = đúng
+    tổng `get_order_status_counts`, xác nhận KHÔNG loại trừ đơn Huỷ và mỗi
+    đơn chỉ thuộc 1 nhân viên (không đếm trùng)."""
+    scope = _admin_scope(db_engine)
+
+    df = get_order_counts_by_org(scope, engine=db_engine)
+
+    assert list(df.columns) == [
+        "division_id",
+        "division_name",
+        "department_id",
+        "department_name",
+        "employee_id",
+        "employee_name",
+        "order_count",
+    ]
+    counts = dict(zip(df["employee_id"], df["order_count"].astype(int)))
+    assert counts == {
+        extra_status_orders["emp_user_id"]: 3,
+        extra_status_orders["emp_manager_id"]: 2,
+        extra_status_orders["emp_outsider_id"]: 2,
+    }
+    assert int(df["order_count"].sum()) == 7
+    # Sắp xếp giảm dần theo order_count.
+    assert df["employee_id"].iloc[0] == extra_status_orders["emp_user_id"]
+    outsider = df[df["employee_id"] == extra_status_orders["emp_outsider_id"]]
+    assert outsider["department_id"].iloc[0] == extra_status_orders["dept_b_id"]
+    assert outsider["division_id"].iloc[0] == extra_status_orders["division_id"]
+
+
+def test_get_order_counts_by_org_restricted_scope_and_date_filter(
+    db_engine, extra_status_orders
+):
+    """Manager (customer X, Y) không thấy dòng emp_outsider (chỉ phụ trách
+    customer Z); lọc thêm `date_to=2026-01-31` loại đơn "Mới tạo" tháng 2
+    của emp_user."""
+    scope = _manager_scope(db_engine, extra_status_orders)
+
+    df_all = get_order_counts_by_org(scope, engine=db_engine)
+    df_jan = get_order_counts_by_org(scope, engine=db_engine, date_to=date(2026, 1, 31))
+
+    assert dict(zip(df_all["employee_id"], df_all["order_count"].astype(int))) == {
+        extra_status_orders["emp_user_id"]: 3,
+        extra_status_orders["emp_manager_id"]: 2,
+    }
+    assert dict(zip(df_jan["employee_id"], df_jan["order_count"].astype(int))) == {
+        extra_status_orders["emp_user_id"]: 2,
+        extra_status_orders["emp_manager_id"]: 2,
+    }
+
+
+def test_get_order_counts_by_org_empty_scope_returns_empty_dataframe(db_engine):
+    """Phạm vi rỗng -> DataFrame rỗng đúng cột."""
+    user_id = _create_user(
+        db_engine, username="orphan_org", role=UserRole.USER, employee_id=None
+    )
+    scope = compute_data_scope(user_id, engine=db_engine)
+    assert scope.customer_ids == frozenset()
+
+    df = get_order_counts_by_org(scope, engine=db_engine)
+
+    assert df.empty
+    assert list(df.columns) == [
+        "division_id",
+        "division_name",
+        "department_id",
+        "department_name",
+        "employee_id",
+        "employee_name",
+        "order_count",
+    ]
+
+
+# ---------------------------------------------------------------------------
+# get_order_counts_by_customer
+# ---------------------------------------------------------------------------
+
+
+def test_get_order_counts_by_customer_admin_sorted_desc_including_huy(
+    db_engine, extra_status_orders
+):
+    """Admin thấy cả 3 khách hàng, sắp xếp giảm dần theo `order_count` —
+    customer_x 3 đơn (gồm 1 "Huỷ"), customer_y 2, customer_z 2 (gồm 1
+    "Huỷ")."""
+    scope = _admin_scope(db_engine)
+
+    df = get_order_counts_by_customer(scope, engine=db_engine)
+
+    assert list(df.columns) == [
+        "customer_id",
+        "customer_code",
+        "customer_name",
+        "order_count",
+    ]
+    counts = dict(zip(df["customer_code"], df["order_count"].astype(int)))
+    assert counts == {"CUST-X": 3, "CUST-Y": 2, "CUST-Z": 2}
+    assert df["customer_code"].iloc[0] == "CUST-X"
+    assert list(df["order_count"]) == sorted(df["order_count"], reverse=True)
+
+
+def test_get_order_counts_by_customer_top_n_and_restricted_scope(
+    db_engine, extra_status_orders
+):
+    """`top_n=1` chỉ giữ khách hàng nhiều đơn nhất; Manager (customer X, Y)
+    không thấy customer_z."""
+    admin_top1 = get_order_counts_by_customer(
+        _admin_scope(db_engine), engine=db_engine, top_n=1
+    )
+    manager_df = get_order_counts_by_customer(
+        _manager_scope(db_engine, extra_status_orders), engine=db_engine
+    )
+
+    assert list(admin_top1["customer_code"]) == ["CUST-X"]
+    assert dict(
+        zip(manager_df["customer_code"], manager_df["order_count"].astype(int))
+    ) == {"CUST-X": 3, "CUST-Y": 2}
+
+
+def test_get_order_counts_by_customer_empty_scope_returns_empty_dataframe(
+    db_engine,
+):
+    """Phạm vi rỗng -> DataFrame rỗng đúng cột."""
+    user_id = _create_user(
+        db_engine, username="orphan_customer", role=UserRole.USER, employee_id=None
+    )
+    scope = compute_data_scope(user_id, engine=db_engine)
+    assert scope.customer_ids == frozenset()
+
+    df = get_order_counts_by_customer(scope, engine=db_engine)
+
+    assert df.empty
+    assert list(df.columns) == [
+        "customer_id",
+        "customer_code",
+        "customer_name",
+        "order_count",
+    ]

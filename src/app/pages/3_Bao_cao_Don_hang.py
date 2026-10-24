@@ -1,7 +1,8 @@
 """Trang Streamlit — Báo cáo Đơn hàng: Tình trạng đơn hàng (`status`) và
 Tình trạng xuất hoá đơn (`invoice_status`), đếm số lượng đơn theo TỪNG giá
 trị thực tế gặp trong dữ liệu (2 tab), cộng thêm xu hướng theo thời gian
-cho tình trạng đơn hàng.
+cho tình trạng đơn hàng; và số lượng đơn theo nhân viên/phòng kinh doanh,
+theo khách hàng (2 tab, dùng chung bộ lọc ngày của trang).
 
 Theo CLAUDE.md mục 2 (tách lớp): trang này CHỈ gọi hàm từ
 `src.services.report_don_hang` rồi vẽ Plotly — KHÔNG viết SQL hay logic
@@ -91,6 +92,31 @@ def _cached_status_trend(
     scope = _cached_data_scope(user_id, role_value)
     return report_don_hang.get_order_status_trend(
         scope, granularity=granularity, date_from=date_from, date_to=date_to
+    )
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def _cached_by_org(
+    user_id: int, role_value: str, date_from: date | None, date_to: date | None
+) -> pd.DataFrame:
+    """Cache số lượng đơn theo Khối-Phòng-NV (mức chi tiết nhất, 1 dòng/
+    nhân viên) — khoá cache gắn `user_id`/`role_value` (CLAUDE.md mục 6)
+    cộng thêm khoảng ngày lọc."""
+    scope = _cached_data_scope(user_id, role_value)
+    return report_don_hang.get_order_counts_by_org(
+        scope, date_from=date_from, date_to=date_to
+    )
+
+
+@st.cache_data(ttl=60, show_spinner=False)
+def _cached_by_customer(
+    user_id: int, role_value: str, date_from: date | None, date_to: date | None
+) -> pd.DataFrame:
+    """Cache số lượng đơn theo khách hàng — khoá cache gắn `user_id`/
+    `role_value` (CLAUDE.md mục 6) cộng thêm khoảng ngày lọc."""
+    scope = _cached_data_scope(user_id, role_value)
+    return report_don_hang.get_order_counts_by_customer(
+        scope, date_from=date_from, date_to=date_to
     )
 
 
@@ -291,10 +317,116 @@ def _render_invoice_status(user_id: int, role_value: str, date_from, date_to) ->
     )
 
 
+def _render_by_org(user_id: int, role_value: str, date_from, date_to) -> None:
+    """Tab "Theo nhân viên/phòng kinh doanh" — cùng cấu trúc
+    `_render_by_org` của trang Kinh doanh (radio Mức xem + groupby
+    client-side), đổi chỉ tiêu doanh thu/lãi lỗ thành `order_count`."""
+    level = st.radio(
+        "Mức xem", ["Khối", "Phòng", "Nhân viên"], horizontal=True, key="dh_org_level"
+    )
+    df = _cached_by_org(user_id, role_value, date_from, date_to)
+    if df.empty:
+        st.warning(
+            "Không có dữ liệu số lượng đơn theo Khối-Phòng-NV trong phạm vi được "
+            "phép xem."
+        )
+        return
+
+    if level == "Khối":
+        group_cols, x_col = ["division_name"], "division_name"
+    elif level == "Phòng":
+        group_cols, x_col = ["division_name", "department_name"], "department_name"
+    else:
+        group_cols = ["division_name", "department_name", "employee_name"]
+        x_col = "employee_name"
+
+    agg = (
+        df.groupby(group_cols, as_index=False)[["order_count"]]
+        .sum()
+        .sort_values("order_count", ascending=False)
+    )
+
+    col1, col2 = st.columns(2)
+    col1.metric("Tổng số đơn", f"{int(agg['order_count'].sum()):,}")
+    col2.metric(f"Số dòng ({level})", len(agg))
+
+    # Khối thường ít dòng — không cần giới hạn top-N. Nhân viên/Phòng có
+    # thể nhiều dòng, thêm slider top-N giống mẫu trang Kinh doanh nhưng
+    # dùng key riêng để không xung đột.
+    if level in ("Nhân viên", "Phòng"):
+        top_n = st.slider(
+            "Số dòng hiển thị (top theo số lượng đơn)",
+            5,
+            50,
+            20,
+            key="dh_org_top_n",
+        )
+        agg = agg.head(top_n).reset_index(drop=True)
+
+    fig = px.bar(
+        agg,
+        x=x_col,
+        y="order_count",
+        title=f"Số lượng đơn theo {level}",
+        labels={x_col: level, "order_count": "Số lượng đơn"},
+    )
+    st.plotly_chart(fig, use_container_width=True)
+    st.dataframe(agg, use_container_width=True, hide_index=True)
+
+    _render_export_buttons(
+        agg,
+        fig,
+        key_prefix="dh_org",
+        file_stub="don_hang_theo_khoi_phong_nv",
+        title=f"Số lượng đơn theo {level}",
+        subtitle=_date_filter_subtitle(date_from, date_to),
+    )
+
+
+def _render_by_customer(user_id: int, role_value: str, date_from, date_to) -> None:
+    """Tab "Theo khách hàng" — cùng cấu trúc `_render_by_customer` của
+    trang Kinh doanh (slider top-N), chart theo `order_count`."""
+    top_n = st.slider(
+        "Số khách hàng hiển thị (top theo số lượng đơn)", 5, 50, 20, key="dh_top_n"
+    )
+    df = _cached_by_customer(user_id, role_value, date_from, date_to)
+    if df.empty:
+        st.warning(
+            "Không có dữ liệu số lượng đơn theo khách hàng trong phạm vi được phép xem."
+        )
+        return
+
+    col1, col2 = st.columns(2)
+    col1.metric("Tổng số đơn", f"{int(df['order_count'].sum()):,}")
+    col2.metric("Số khách hàng", len(df))
+
+    top_df = df.head(top_n)
+    fig = px.bar(
+        top_df,
+        x="customer_name",
+        y="order_count",
+        title=f"Top {len(top_df)} khách hàng theo số lượng đơn",
+        labels={"customer_name": "Khách hàng", "order_count": "Số lượng đơn"},
+    )
+    st.plotly_chart(fig, use_container_width=True)
+    st.dataframe(df, use_container_width=True, hide_index=True)
+
+    _render_export_buttons(
+        df,
+        fig,
+        key_prefix="dh_customer",
+        file_stub="don_hang_theo_khach_hang",
+        title="Số lượng đơn theo khách hàng (toàn bộ, biểu đồ chỉ hiện top "
+        f"{len(top_df)})",
+        subtitle=_date_filter_subtitle(date_from, date_to),
+    )
+
+
 def main() -> None:
     """Entry point trang Báo cáo Đơn hàng — kiểm tra đăng nhập trước (đúng
     key `st.session_state["lacco_auth_session"]` dùng ở `main.py`), rồi
-    hiển thị 2 tab: tình trạng đơn hàng / tình trạng xuất hoá đơn."""
+    hiển thị 4 tab: tình trạng đơn hàng / tình trạng xuất hoá đơn / theo
+    nhân viên-phòng kinh doanh / theo khách hàng."""
     st.title("Báo cáo Đơn hàng — Tình trạng đơn hàng & Xuất hoá đơn")
 
     session = st.session_state.get(_SESSION_KEY)
@@ -323,13 +455,22 @@ def main() -> None:
 
     date_from, date_to = _render_date_filters()
 
-    tab_status, tab_invoice = st.tabs(
-        ["Tình trạng đơn hàng", "Tình trạng xuất hoá đơn"]
+    tab_status, tab_invoice, tab_org, tab_customer = st.tabs(
+        [
+            "Tình trạng đơn hàng",
+            "Tình trạng xuất hoá đơn",
+            "Theo nhân viên/phòng kinh doanh",
+            "Theo khách hàng",
+        ]
     )
     with tab_status:
         _render_order_status(user_id, role_value, date_from, date_to)
     with tab_invoice:
         _render_invoice_status(user_id, role_value, date_from, date_to)
+    with tab_org:
+        _render_by_org(user_id, role_value, date_from, date_to)
+    with tab_customer:
+        _render_by_customer(user_id, role_value, date_from, date_to)
 
 
 if __name__ == "__main__":

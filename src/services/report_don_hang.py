@@ -1,7 +1,12 @@
 """Service tính KPI báo cáo Đơn hàng — Tình trạng đơn hàng (`status`) và
 Tình trạng xuất hoá đơn (`invoice_status`), đếm số lượng đơn theo TỪNG giá
 trị thực tế gặp trong dữ liệu, cộng thêm xu hướng theo thời gian
-(tháng/tuần).
+(tháng/tuần), và số lượng đơn theo Khối-Phòng-Nhân viên kinh doanh / theo
+khách hàng (`get_order_counts_by_org`, `get_order_counts_by_customer`).
+
+Số lượng đơn theo nhân viên KHÔNG có vấn đề đếm trùng như báo cáo Khách
+hàng "Theo nhân viên" — `sales_order.employee_id` là FK trực tiếp (mỗi đơn
+thuộc đúng 1 nhân viên), không phải suy luận qua UNION nhiều bảng.
 
 Nguồn yêu cầu: `.claude/rules/trang-thai-yeu-cau.md`, nhóm "Kinh doanh",
 2 dòng "Tình trạng đơn hàng" và "Tình trạng xuất hóa đơn" — cả 2 đã "Đã rõ"
@@ -53,7 +58,7 @@ from sqlalchemy import Engine, func, select
 from sqlalchemy.orm import Session
 
 from src.auth.scope import DataScope
-from src.db.models import SalesOrder
+from src.db.models import Customer, Department, Division, Employee, SalesOrder
 from src.services.db_connection import get_engine
 
 
@@ -281,5 +286,156 @@ def get_order_status_trend(
         scope.user_id,
         granularity,
         len(df),
+    )
+    return df
+
+
+def get_order_counts_by_org(
+    scope: DataScope,
+    *,
+    engine: Engine | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
+) -> pd.DataFrame:
+    """Số lượng đơn hàng theo phân cấp Khối-Phòng-Nhân viên kinh doanh, đã
+    lọc theo RBAC — KHÔNG loại trừ đơn "Huỷ" (đếm số lượng, không phải
+    doanh thu — xem docstring module).
+
+    Join `sales_order.employee_id -> employee -> department -> division`,
+    đúng cấu trúc join của `report_kinh_doanh.get_revenue_profit_by_org`.
+    Trả về mức chi tiết nhất (1 dòng/nhân viên) — trang Streamlit tự gộp
+    theo Khối/Phòng/NV từ cùng 1 DataFrame để tránh gọi DB nhiều lần.
+
+    Args:
+        scope: Phạm vi dữ liệu của user đang đăng nhập.
+        engine: SQLAlchemy Engine tuỳ chọn.
+        date_from, date_to: Lọc theo `order_date`, tuỳ chọn.
+
+    Returns:
+        DataFrame với các cột: `division_id`, `division_name`,
+        `department_id`, `department_name`, `employee_id`, `employee_name`,
+        `order_count` — sắp xếp giảm dần theo `order_count`. Trả về
+        DataFrame rỗng (đúng cột) nếu `scope.customer_ids` rỗng và
+        `scope.unrestricted` là False.
+    """
+    engine = engine or get_engine()
+    columns = [
+        "division_id",
+        "division_name",
+        "department_id",
+        "department_name",
+        "employee_id",
+        "employee_name",
+        "order_count",
+    ]
+
+    if not scope.unrestricted and not scope.customer_ids:
+        logger.warning(
+            "get_order_counts_by_org: scope rỗng (user_id={}) -> trả về "
+            "DataFrame rỗng.",
+            scope.user_id,
+        )
+        return pd.DataFrame(columns=columns)
+
+    stmt = (
+        select(
+            Division.id.label("division_id"),
+            Division.name.label("division_name"),
+            Department.id.label("department_id"),
+            Department.name.label("department_name"),
+            Employee.id.label("employee_id"),
+            Employee.full_name.label("employee_name"),
+            func.count(SalesOrder.id).label("order_count"),
+        )
+        .join(Employee, SalesOrder.employee_id == Employee.id)
+        .join(Department, Employee.department_id == Department.id)
+        .join(Division, Department.division_id == Division.id)
+        .group_by(
+            Division.id,
+            Division.name,
+            Department.id,
+            Department.name,
+            Employee.id,
+            Employee.full_name,
+        )
+    )
+    stmt = _apply_scope_filter(stmt, scope)
+    stmt = _apply_date_filter(stmt, date_from, date_to)
+    stmt = stmt.order_by(func.count(SalesOrder.id).desc())
+
+    with Session(engine) as session:
+        rows = session.execute(stmt).all()
+
+    df = pd.DataFrame(rows, columns=columns)
+    logger.info(
+        "get_order_counts_by_org: user_id={} -> {} dòng (Khối-Phòng-NV), tổng {} đơn.",
+        scope.user_id,
+        len(df),
+        int(df["order_count"].sum()) if not df.empty else 0,
+    )
+    return df
+
+
+def get_order_counts_by_customer(
+    scope: DataScope,
+    *,
+    engine: Engine | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    top_n: int | None = None,
+) -> pd.DataFrame:
+    """Số lượng đơn hàng theo khách hàng, đã lọc theo RBAC — KHÔNG loại trừ
+    đơn "Huỷ" (xem docstring module).
+
+    Args:
+        scope: Phạm vi dữ liệu của user đang đăng nhập.
+        engine: SQLAlchemy Engine tuỳ chọn.
+        date_from, date_to: Lọc theo `order_date`, tuỳ chọn.
+        top_n: Nếu truyền, chỉ giữ `top_n` khách hàng có `order_count` cao
+            nhất (cùng ý nghĩa tham số `top_n` của
+            `report_kinh_doanh.get_revenue_profit_by_customer`).
+
+    Returns:
+        DataFrame với các cột: `customer_id`, `customer_code`,
+        `customer_name`, `order_count` — sắp xếp giảm dần theo
+        `order_count`. Trả về DataFrame rỗng (đúng cột) nếu
+        `scope.customer_ids` rỗng và `scope.unrestricted` là False.
+    """
+    engine = engine or get_engine()
+    columns = ["customer_id", "customer_code", "customer_name", "order_count"]
+
+    if not scope.unrestricted and not scope.customer_ids:
+        logger.warning(
+            "get_order_counts_by_customer: scope rỗng (user_id={}) -> trả về "
+            "DataFrame rỗng.",
+            scope.user_id,
+        )
+        return pd.DataFrame(columns=columns)
+
+    stmt = (
+        select(
+            Customer.id.label("customer_id"),
+            Customer.code.label("customer_code"),
+            Customer.name.label("customer_name"),
+            func.count(SalesOrder.id).label("order_count"),
+        )
+        .join(SalesOrder, SalesOrder.customer_id == Customer.id)
+        .group_by(Customer.id, Customer.code, Customer.name)
+    )
+    stmt = _apply_scope_filter(stmt, scope)
+    stmt = _apply_date_filter(stmt, date_from, date_to)
+    stmt = stmt.order_by(func.count(SalesOrder.id).desc(), Customer.name)
+
+    with Session(engine) as session:
+        rows = session.execute(stmt).all()
+
+    df = pd.DataFrame(rows, columns=columns)
+    if top_n is not None:
+        df = df.head(top_n).reset_index(drop=True)
+    logger.info(
+        "get_order_counts_by_customer: user_id={} -> {} khách hàng (top_n={}).",
+        scope.user_id,
+        len(df),
+        top_n,
     )
     return df
