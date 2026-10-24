@@ -1,5 +1,6 @@
 """Service tầng nghiệp vụ cho báo cáo Khách hàng — Tăng giảm loại KH (A/B/C)
-theo thời gian và Phân bố khách hàng theo nguồn.
+theo thời gian, Phân bố khách hàng theo nguồn, Số lượng khách hàng theo
+nhân viên/phòng ban và Danh sách khách hàng.
 
 Theo CLAUDE.md mục 2 (tách lớp): module này chứa TOÀN BỘ truy vấn SQLAlchemy
 + tính toán KPI cho báo cáo Khách hàng. Trang Streamlit
@@ -33,6 +34,26 @@ lọc đúng theo `scope.customer_ids` được `compute_data_scope()` trả v�
 đúng nguyên tắc "không tự viết logic phân quyền riêng". Rủi ro này cần COO
 xác nhận cách xử lý ở tầng `src/auth/`, KHÔNG xử lý ở tầng service báo cáo.
 
+*** QUYẾT ĐỊNH COO 24/10/2026 — "Theo nhân viên"/"Theo phòng ban" ĐẾM
+TRÙNG CÓ CHỦ ĐÍCH (`get_customer_count_by_employee`,
+`get_customer_count_by_department`) ***
+`customer` không có cột nhân viên/phòng phụ trách trực tiếp. COO đã xác
+nhận dùng ĐÚNG cách suy luận phạm vi RBAC nói trên (UNION `customer_id` từ
+`sales_order.employee_id`, `debt.employee_id`, `price_request.employee_id`
+với `customer_id` không NULL — xem
+`auth_service.fetch_customer_ids_for_employee`) nhưng đảo chiều: với MỌI
+nhân viên, GROUP BY nhân viên (hoặc phòng) rồi `COUNT(DISTINCT
+customer_id)`. Hệ quả đã được chấp nhận: 1 khách hàng từng giao dịch với
+nhiều nhân viên/phòng SẼ được đếm ở nhiều dòng cùng lúc — tổng cộng theo
+nhân viên/phòng có thể lớn hơn tổng số khách hàng thực tế (dữ liệu thật
+07/09/2026: 24/30 KH có >1 nhân viên, 22/30 KH có >1 phòng). Lý do chọn:
+không có nguồn dữ liệu "người phụ trách" chính thức nào khác, và cách suy
+luận này nhất quán với chính cơ chế RBAC đang dùng — đây KHÔNG phải bug.
+UI bắt buộc hiển thị cảnh báo đếm trùng ngay dưới tiêu đề 2 tab này.
+Số theo phòng được tính bằng query GROUP BY phòng riêng (COUNT DISTINCT ở
+cấp phòng) — KHÔNG cộng dồn từ kết quả theo nhân viên, tránh nhân thêm sai
+số khi 1 KH giao dịch với nhiều nhân viên cùng phòng.
+
 *** GHI CHÚ CHẤT LƯỢNG DỮ LIỆU — PHÁT HIỆN KHI KIỂM TRA DỮ LIỆU THẬT
 07/09/2026, CHƯA XÁC NHẬN CÁCH XỬ LÝ ***
 `customer_classification_history` có 1 số dòng trùng lặp/xung đột tại cùng
@@ -55,12 +76,17 @@ from __future__ import annotations
 
 import pandas as pd
 from loguru import logger
-from sqlalchemy import Engine, func, select
+from sqlalchemy import Engine, Subquery, func, select, union_all
 from sqlalchemy.orm import Session
 
 from src.auth.scope import DataScope
-from src.db.models.business import CustomerClassificationHistory
-from src.db.models.dimension import Customer
+from src.db.models.business import (
+    CustomerClassificationHistory,
+    Debt,
+    PriceRequest,
+    SalesOrder,
+)
+from src.db.models.dimension import Customer, Department, Division, Employee
 from src.services.db_connection import get_engine
 
 # Customer.source cho phép NULL trong ERD (`src/db/models/dimension.py`) —
@@ -197,6 +223,247 @@ def get_source_distribution(
 
     logger.info(
         "get_source_distribution: user_id={} unrestricted={} -> {} nguồn khác nhau.",
+        scope.user_id,
+        scope.unrestricted,
+        len(df),
+    )
+    return df
+
+
+def _customer_employee_links() -> Subquery:
+    """Subquery UNION ALL các cặp `(employee_id, customer_id)` từ 3 nguồn
+    giao dịch — đúng 3 nguồn mà `auth_service.fetch_customer_ids_for_employee`
+    dùng để suy luận phạm vi RBAC, nhưng KHÔNG lọc theo 1 nhân viên cụ thể
+    (xem "QUYẾT ĐỊNH COO 24/10/2026" ở docstring module).
+
+    Dùng UNION ALL (không khử trùng) vì hàm gọi luôn `COUNT(DISTINCT
+    customer_id)` ở bước group — khử trùng ở đây là thừa.
+    """
+    return union_all(
+        select(
+            SalesOrder.employee_id.label("employee_id"),
+            SalesOrder.customer_id.label("customer_id"),
+        ),
+        select(Debt.employee_id, Debt.customer_id),
+        select(PriceRequest.employee_id, PriceRequest.customer_id).where(
+            PriceRequest.customer_id.is_not(None)
+        ),
+    ).subquery("customer_employee_link")
+
+
+def get_customer_count_by_employee(
+    scope: DataScope, *, engine: Engine | None = None
+) -> pd.DataFrame:
+    """Số lượng khách hàng theo nhân viên — `COUNT(DISTINCT customer_id)`
+    trên UNION `sales_order`/`debt`/`price_request`, group theo nhân viên.
+
+    *** 1 khách hàng có thể được đếm ở NHIỀU nhân viên *** (quyết định COO
+    24/10/2026, xem docstring module) — tổng cột `so_luong_kh` có thể lớn
+    hơn tổng số khách hàng thực tế.
+
+    Lọc theo `scope.customer_ids` trên cột `customer_id` của UNION, TRỪ KHI
+    `scope.unrestricted` (Admin) thì không lọc — CLAUDE.md mục 6.
+
+    Parameters
+    ----------
+    scope : DataScope
+        Phạm vi dữ liệu của user đang đăng nhập.
+    engine : sqlalchemy.Engine, optional
+        Cho phép truyền engine riêng (dùng trong test).
+
+    Returns
+    -------
+    pd.DataFrame
+        Cột: `employee_id`, `employee_name`, `department_id`,
+        `department_name`, `so_luong_kh` (int) — sắp xếp giảm dần theo
+        `so_luong_kh`. Trả DataFrame rỗng (đúng cột) nếu
+        `scope.customer_ids` rỗng và không unrestricted.
+    """
+    columns = [
+        "employee_id",
+        "employee_name",
+        "department_id",
+        "department_name",
+        "so_luong_kh",
+    ]
+    if not scope.unrestricted and not scope.customer_ids:
+        logger.warning(
+            "get_customer_count_by_employee: user_id={} có scope rỗng -> trả "
+            "DataFrame rỗng, không truy vấn DB.",
+            scope.user_id,
+        )
+        return pd.DataFrame(columns=columns)
+
+    engine = engine or get_engine()
+
+    link = _customer_employee_links()
+    so_luong_kh = func.count(func.distinct(link.c.customer_id))
+    stmt = (
+        select(
+            Employee.id,
+            Employee.full_name,
+            Department.id,
+            Department.name,
+            so_luong_kh.label("so_luong_kh"),
+        )
+        .select_from(link)
+        .join(Employee, link.c.employee_id == Employee.id)
+        .join(Department, Employee.department_id == Department.id)
+        .group_by(Employee.id, Employee.full_name, Department.id, Department.name)
+        .order_by(so_luong_kh.desc(), Employee.full_name)
+    )
+    if not scope.unrestricted:
+        stmt = stmt.where(link.c.customer_id.in_(scope.customer_ids))
+
+    with Session(engine) as session:
+        rows = session.execute(stmt).all()
+
+    df = pd.DataFrame(rows, columns=columns)
+    logger.info(
+        "get_customer_count_by_employee: user_id={} unrestricted={} -> {} nhân viên.",
+        scope.user_id,
+        scope.unrestricted,
+        len(df),
+    )
+    return df
+
+
+def get_customer_count_by_department(
+    scope: DataScope, *, engine: Engine | None = None
+) -> pd.DataFrame:
+    """Số lượng khách hàng theo phòng ban — cùng cấu trúc UNION với
+    `get_customer_count_by_employee` nhưng GROUP BY phòng (qua join
+    `employee -> department -> division`), `COUNT(DISTINCT customer_id)` ở
+    cấp phòng. KHÔNG cộng dồn từ kết quả theo nhân viên — 1 KH giao dịch
+    với 2 nhân viên cùng phòng chỉ được đếm 1 lần cho phòng đó.
+
+    *** 1 khách hàng vẫn có thể được đếm ở NHIỀU phòng *** (quyết định COO
+    24/10/2026, xem docstring module).
+
+    Lọc theo `scope.customer_ids`, TRỪ KHI `scope.unrestricted` (Admin) —
+    CLAUDE.md mục 6.
+
+    Parameters
+    ----------
+    scope : DataScope
+        Phạm vi dữ liệu của user đang đăng nhập.
+    engine : sqlalchemy.Engine, optional
+        Cho phép truyền engine riêng (dùng trong test).
+
+    Returns
+    -------
+    pd.DataFrame
+        Cột: `department_id`, `department_name`, `division_id`,
+        `division_name`, `so_luong_kh` (int) — sắp xếp giảm dần theo
+        `so_luong_kh`. Trả DataFrame rỗng (đúng cột) nếu
+        `scope.customer_ids` rỗng và không unrestricted.
+    """
+    columns = [
+        "department_id",
+        "department_name",
+        "division_id",
+        "division_name",
+        "so_luong_kh",
+    ]
+    if not scope.unrestricted and not scope.customer_ids:
+        logger.warning(
+            "get_customer_count_by_department: user_id={} có scope rỗng -> "
+            "trả DataFrame rỗng, không truy vấn DB.",
+            scope.user_id,
+        )
+        return pd.DataFrame(columns=columns)
+
+    engine = engine or get_engine()
+
+    link = _customer_employee_links()
+    so_luong_kh = func.count(func.distinct(link.c.customer_id))
+    stmt = (
+        select(
+            Department.id,
+            Department.name,
+            Division.id,
+            Division.name,
+            so_luong_kh.label("so_luong_kh"),
+        )
+        .select_from(link)
+        .join(Employee, link.c.employee_id == Employee.id)
+        .join(Department, Employee.department_id == Department.id)
+        .join(Division, Department.division_id == Division.id)
+        .group_by(Department.id, Department.name, Division.id, Division.name)
+        .order_by(so_luong_kh.desc(), Department.name)
+    )
+    if not scope.unrestricted:
+        stmt = stmt.where(link.c.customer_id.in_(scope.customer_ids))
+
+    with Session(engine) as session:
+        rows = session.execute(stmt).all()
+
+    df = pd.DataFrame(rows, columns=columns)
+    logger.info(
+        "get_customer_count_by_department: user_id={} unrestricted={} -> {} phòng.",
+        scope.user_id,
+        scope.unrestricted,
+        len(df),
+    )
+    return df
+
+
+def get_customer_list(
+    scope: DataScope, *, engine: Engine | None = None
+) -> pd.DataFrame:
+    """Danh sách khách hàng trong phạm vi được phép xem — SELECT trực tiếp
+    bảng `customer` (không UNION, không đếm), sắp xếp theo `name`.
+
+    Lọc theo `scope.customer_ids`, TRỪ KHI `scope.unrestricted` (Admin) —
+    CLAUDE.md mục 6.
+
+    Parameters
+    ----------
+    scope : DataScope
+        Phạm vi dữ liệu của user đang đăng nhập.
+    engine : sqlalchemy.Engine, optional
+        Cho phép truyền engine riêng (dùng trong test).
+
+    Returns
+    -------
+    pd.DataFrame
+        Cột: `id`, `code`, `name`, `source`, `current_classification` (str
+        "A"/"B"/"C" — chuẩn hoá từ enum như `get_classification_trend`).
+        Trả DataFrame rỗng (đúng cột) nếu `scope.customer_ids` rỗng và không
+        unrestricted.
+    """
+    columns = ["id", "code", "name", "source", "current_classification"]
+    if not scope.unrestricted and not scope.customer_ids:
+        logger.warning(
+            "get_customer_list: user_id={} có scope rỗng -> trả DataFrame "
+            "rỗng, không truy vấn DB.",
+            scope.user_id,
+        )
+        return pd.DataFrame(columns=columns)
+
+    engine = engine or get_engine()
+
+    stmt = select(
+        Customer.id,
+        Customer.code,
+        Customer.name,
+        Customer.source,
+        Customer.current_classification,
+    ).order_by(Customer.name)
+    if not scope.unrestricted:
+        stmt = stmt.where(Customer.id.in_(scope.customer_ids))
+
+    with Session(engine) as session:
+        rows = session.execute(stmt).all()
+
+    df = pd.DataFrame(rows, columns=columns)
+    if not df.empty:
+        df["current_classification"] = df["current_classification"].apply(
+            lambda c: c.value if hasattr(c, "value") else c
+        )
+
+    logger.info(
+        "get_customer_list: user_id={} unrestricted={} -> {} khách hàng.",
         scope.user_id,
         scope.unrestricted,
         len(df),

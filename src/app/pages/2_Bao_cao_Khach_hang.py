@@ -1,5 +1,6 @@
-"""Trang Streamlit — Báo cáo Khách hàng: Tăng giảm loại KH (A/B/C) theo
-thời gian + Phân bố khách hàng theo nguồn.
+"""Trang Streamlit — Báo cáo Khách hàng (5 tab): Tăng giảm loại KH (A/B/C)
+theo thời gian, Phân bố khách hàng theo nguồn, Theo nhân viên, Theo phòng
+ban, Danh sách khách hàng.
 
 Theo CLAUDE.md mục 2 (tách lớp): trang này CHỈ gọi hàm từ
 `src/services/report_khach_hang.py` (logic KPI) và `src/auth/scope.py`
@@ -32,6 +33,9 @@ from src.services import export_utils
 from src.services.db_connection import get_engine
 from src.services.report_khach_hang import (
     get_classification_trend,
+    get_customer_count_by_department,
+    get_customer_count_by_employee,
+    get_customer_list,
     get_source_distribution,
 )
 
@@ -41,6 +45,15 @@ st.set_page_config(page_title="LACCO Dashboard — Báo cáo Khách hàng", layo
 _SESSION_KEY = "lacco_auth_session"
 
 _CLASSIFICATION_ORDER = ["A", "B", "C"]
+
+# Cảnh báo bắt buộc theo quyết định COO 24/10/2026 (xem docstring module
+# `src/services/report_khach_hang.py`) — hiển thị ngay dưới tiêu đề tab
+# "Theo nhân viên"/"Theo phòng ban".
+_DOUBLE_COUNT_WARNING = (
+    "Lưu ý: 1 khách hàng có thể từng giao dịch với nhiều nhân viên/phòng, "
+    "nên được đếm ở nhiều dòng — tổng cộng có thể lớn hơn tổng số khách "
+    "hàng thực tế."
+)
 
 
 @st.cache_data(ttl=60, show_spinner=False)
@@ -71,6 +84,31 @@ def _cached_source_distribution(user_id: int, role_value: str) -> pd.DataFrame:
     `_cached_classification_trend`."""
     scope = _cached_data_scope(user_id, role_value)
     return get_source_distribution(scope, engine=get_engine())
+
+
+@st.cache_data(ttl=60, show_spinner="Đang tải số khách hàng theo nhân viên...")
+def _cached_count_by_employee(user_id: int, role_value: str) -> pd.DataFrame:
+    """Cache số KH theo nhân viên — khoá cache theo `user_id`+`role_value`
+    (CLAUDE.md mục 6), cùng cơ chế như `_cached_classification_trend`."""
+    scope = _cached_data_scope(user_id, role_value)
+    return get_customer_count_by_employee(scope, engine=get_engine())
+
+
+@st.cache_data(ttl=60, show_spinner="Đang tải số khách hàng theo phòng ban...")
+def _cached_count_by_department(user_id: int, role_value: str) -> pd.DataFrame:
+    """Cache số KH theo phòng ban — khoá cache theo `user_id`+`role_value`
+    (CLAUDE.md mục 6), cùng cơ chế như `_cached_classification_trend`."""
+    scope = _cached_data_scope(user_id, role_value)
+    return get_customer_count_by_department(scope, engine=get_engine())
+
+
+@st.cache_data(ttl=60, show_spinner="Đang tải danh sách khách hàng...")
+def _cached_customer_list(user_id: int, role_value: str) -> pd.DataFrame:
+    """Cache danh sách KH — khoá cache theo `user_id`+`role_value`
+    (CLAUDE.md mục 6). Ô tìm kiếm lọc client-side trên DataFrame trả về từ
+    đây, không query lại DB mỗi lần gõ."""
+    scope = _cached_data_scope(user_id, role_value)
+    return get_customer_list(scope, engine=get_engine())
 
 
 def _render_login_required() -> None:
@@ -220,15 +258,152 @@ def _render_source_distribution(df: pd.DataFrame) -> None:
     )
 
 
+def _render_count_by_employee(df: pd.DataFrame) -> None:
+    """Vẽ bar chart số KH theo nhân viên + cảnh báo đếm trùng (quyết định
+    COO 24/10/2026) — chỉ nhận DataFrame đã tính sẵn từ service."""
+    st.subheader("Số lượng khách hàng theo nhân viên")
+    st.warning(_DOUBLE_COUNT_WARNING)
+
+    if df.empty:
+        st.info(
+            "Không có dữ liệu khách hàng theo nhân viên trong phạm vi được phép xem."
+        )
+        return
+
+    df_sorted = df.sort_values("so_luong_kh", ascending=True)
+    fig = px.bar(
+        df_sorted,
+        x="so_luong_kh",
+        y="employee_name",
+        orientation="h",
+        text="so_luong_kh",
+        hover_data=["department_name"],
+        labels={
+            "so_luong_kh": "Số lượng khách hàng",
+            "employee_name": "Nhân viên",
+            "department_name": "Phòng",
+        },
+        title="Số lượng khách hàng theo nhân viên",
+    )
+    fig.update_traces(textposition="outside")
+    st.plotly_chart(fig, use_container_width=True)
+
+    display_df = df[["employee_name", "department_name", "so_luong_kh"]].rename(
+        columns={
+            "employee_name": "Nhân viên",
+            "department_name": "Phòng",
+            "so_luong_kh": "Số lượng khách hàng",
+        }
+    )
+    st.dataframe(display_df, use_container_width=True, hide_index=True)
+
+    _render_export_buttons(
+        display_df,
+        fig,
+        key_prefix="kh_by_employee",
+        file_stub="khach_hang_theo_nhan_vien",
+        title="Số lượng khách hàng theo nhân viên",
+    )
+
+
+def _render_count_by_department(df: pd.DataFrame) -> None:
+    """Vẽ bar chart số KH theo phòng ban + cảnh báo đếm trùng (quyết định
+    COO 24/10/2026) — chỉ nhận DataFrame đã tính sẵn từ service."""
+    st.subheader("Số lượng khách hàng theo phòng ban")
+    st.warning(_DOUBLE_COUNT_WARNING)
+
+    if df.empty:
+        st.info(
+            "Không có dữ liệu khách hàng theo phòng ban trong phạm vi được phép xem."
+        )
+        return
+
+    df_sorted = df.sort_values("so_luong_kh", ascending=True)
+    fig = px.bar(
+        df_sorted,
+        x="so_luong_kh",
+        y="department_name",
+        orientation="h",
+        text="so_luong_kh",
+        hover_data=["division_name"],
+        labels={
+            "so_luong_kh": "Số lượng khách hàng",
+            "department_name": "Phòng",
+            "division_name": "Khối",
+        },
+        title="Số lượng khách hàng theo phòng ban",
+    )
+    fig.update_traces(textposition="outside")
+    st.plotly_chart(fig, use_container_width=True)
+
+    display_df = df[["department_name", "division_name", "so_luong_kh"]].rename(
+        columns={
+            "department_name": "Phòng",
+            "division_name": "Khối",
+            "so_luong_kh": "Số lượng khách hàng",
+        }
+    )
+    st.dataframe(display_df, use_container_width=True, hide_index=True)
+
+    _render_export_buttons(
+        display_df,
+        fig,
+        key_prefix="kh_by_department",
+        file_stub="khach_hang_theo_phong_ban",
+        title="Số lượng khách hàng theo phòng ban",
+    )
+
+
+def _render_customer_list(df: pd.DataFrame) -> None:
+    """Bảng danh sách KH + ô tìm kiếm theo tên/mã (lọc client-side trên
+    DataFrame đã tải, không query lại DB) + nút xuất Excel (không có PDF vì
+    không có chart)."""
+    st.subheader("Danh sách khách hàng")
+
+    if df.empty:
+        st.info("Không có khách hàng nào trong phạm vi được phép xem.")
+        return
+
+    keyword = st.text_input("Tìm theo tên hoặc mã khách hàng", key="kh_list_search")
+    keyword = keyword.strip()
+    filtered = df
+    if keyword:
+        mask = df["name"].str.contains(keyword, case=False, regex=False) | df[
+            "code"
+        ].str.contains(keyword, case=False, regex=False)
+        filtered = df[mask]
+
+    st.caption(f"Hiển thị {len(filtered):,} / {len(df):,} khách hàng.")
+    display_df = filtered.drop(columns=["id"]).rename(
+        columns={
+            "code": "Mã KH",
+            "name": "Tên khách hàng",
+            "source": "Nguồn",
+            "current_classification": "Loại KH hiện tại",
+        }
+    )
+    st.dataframe(display_df, use_container_width=True, hide_index=True)
+
+    st.download_button(
+        "⬇️ Xuất Excel",
+        data=export_utils.dataframe_to_excel_bytes(
+            display_df, sheet_name="kh_list", title="Danh sách khách hàng"
+        ),
+        file_name=f"khach_hang_danh_sach_{date.today().isoformat()}.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        key="kh_list_export_xlsx",
+    )
+
+
 def main() -> None:
     """Entry point trang Streamlit — kiểm tra đăng nhập qua
-    `st.session_state[_SESSION_KEY]` trước, sau đó tải + vẽ 2 báo cáo con
-    của nhóm Khách hàng."""
+    `st.session_state[_SESSION_KEY]` trước, sau đó tải + vẽ 5 tab báo cáo
+    con của nhóm Khách hàng."""
     st.title("Báo cáo Khách hàng")
     st.caption(
-        "Tăng giảm loại khách hàng A/B/C theo thời gian + Phân bố khách "
-        "hàng theo nguồn. Dữ liệu đã lọc theo phạm vi RBAC của tài khoản "
-        "đang đăng nhập."
+        "Tăng giảm loại khách hàng A/B/C, phân bố theo nguồn, theo nhân "
+        "viên/phòng ban và danh sách khách hàng. Dữ liệu đã lọc theo phạm "
+        "vi RBAC của tài khoản đang đăng nhập."
     )
 
     session = st.session_state.get(_SESSION_KEY)
@@ -255,12 +430,25 @@ def main() -> None:
         scope.unrestricted,
     )
 
-    trend_df = _cached_classification_trend(user_id, role_value)
-    source_df = _cached_source_distribution(user_id, role_value)
-
-    _render_classification_trend(trend_df)
-    st.divider()
-    _render_source_distribution(source_df)
+    tab_trend, tab_source, tab_employee, tab_department, tab_list = st.tabs(
+        [
+            "Tăng giảm A/B/C",
+            "Theo nguồn",
+            "Theo nhân viên",
+            "Theo phòng ban",
+            "Danh sách khách hàng",
+        ]
+    )
+    with tab_trend:
+        _render_classification_trend(_cached_classification_trend(user_id, role_value))
+    with tab_source:
+        _render_source_distribution(_cached_source_distribution(user_id, role_value))
+    with tab_employee:
+        _render_count_by_employee(_cached_count_by_employee(user_id, role_value))
+    with tab_department:
+        _render_count_by_department(_cached_count_by_department(user_id, role_value))
+    with tab_list:
+        _render_customer_list(_cached_customer_list(user_id, role_value))
 
 
 if __name__ == "__main__":
